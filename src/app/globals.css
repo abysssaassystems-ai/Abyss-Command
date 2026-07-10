@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #F8FAFC; /* Clean, light slate background */
+  --foreground: #0F172A; /* Dark slate text for high contrast and readability */
+}
+
+html {
+  scroll-behavior: smooth;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+/* Custom Selection Highlight Color keeping the electric blue accent */
+::-moz-selection {
+  background: rgba(0, 242, 254, 0.25); /* Keeps the signature blue glow */
+  color: #0F172A; /* Dark text so it remains readable against the light highlight */
+}
+::selection {
+  background: rgba(0, 242, 254, 0.25);
+  color: #0F172A;
+}
+
+/* Custom Utilities for the Electric Shield Glow Effect adjusted for light mode */
+@layer utilities {
+  .text-glow {
+    /* Uses a slightly deeper cyan hue so it actually registers on a light background */
+    text-shadow: 0 0 10px rgba(0, 184, 196, 0.3);
+  }
+  
+  .box-glow {
+    box-shadow: 0 0 25px rgba(0, 242, 254, 0.15);
+  }
+  
+  .border-glow {
+    border-color: rgba(0, 242, 254, 0.4);
+    box-shadow: 0 0 15px rgba(0, 242, 254, 0.1);
+  }
+}
+
+/* Smooth custom scrollbar updated for the light aesthetic */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F1F5F9; /* Light gray track */
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1; /* Subtle gray thumb */
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00B8C4; /* Keeps your crisp blue accent on hover */
+}
