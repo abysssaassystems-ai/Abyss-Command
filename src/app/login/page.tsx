@@ -1,12 +1,10 @@
 "use client";
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function AppsSoftwareLogin(): React.JSX.Element {
-  const router = useRouter();
-  const [email, setEmail] = useState<string>('');
+  const [identifier, setIdentifier] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorLog, setErrorLog] = useState<string | null>(null);
@@ -15,32 +13,68 @@ export default function AppsSoftwareLogin(): React.JSX.Element {
     e.preventDefault();
     setIsSubmitting(true);
     setErrorLog(null);
+    console.log("🚀 LOGIN ATTEMPT INITIALIZED for:", identifier);
 
     try {
-      // Direct pipeline cross-reference verification lookup
-      const { data, error } = await supabase
-        .from('apps_and_software_clients')
-        .select('*')
-        .eq('email', email)
-        .eq('password', password)
-        .maybeSingle();
+      let finalEmail = identifier.trim();
+
+      // 1. Resolve Username to Email if no '@' symbol is present
+      if (!finalEmail.includes('@')) {
+        console.log("🔍 Input identified as username. Querying profile registry...");
+        const { data: clientData, error: lookupError } = await supabase
+          .from('apps_and_software_clients')
+          .select('email')
+          .eq('username', finalEmail)
+          .maybeSingle();
+
+        if (lookupError) {
+          console.error("❌ Database lookup failed:", lookupError);
+          setErrorLog(`LOOKUP_FAULT: ${lookupError.message}`);
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (!clientData?.email) {
+          console.warn("⚠️ Username not found in apps_and_software_clients");
+          setErrorLog("AUTHENTICATION_FAILED: Username identifier not found in database records.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        finalEmail = clientData.email;
+        console.log("🎯 Username resolved to email target:", finalEmail);
+      }
+
+      // 2. Authenticate through Supabase Auth
+      console.log("🔐 Sending credentials to Supabase Auth engine...");
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: finalEmail,
+        password: password,
+      });
 
       if (error) {
-        setErrorLog(`DATABASE_FAULT: ${error.message}`);
+        console.error("❌ Supabase Auth engine rejected credentials:", error.message);
+        setErrorLog(`AUTHENTICATION_FAILED: ${error.message}`);
         setIsSubmitting(false);
         return;
       }
 
-      if (!data) {
-        setErrorLog("AUTHENTICATION_FAILED: Invalid security parameter credentials mismatch.");
+      if (!data?.user) {
+        console.error("❌ No user object inside returned payload.");
+        setErrorLog("AUTHENTICATION_FAILED: No user profile returned.");
         setIsSubmitting(false);
         return;
       }
 
-      // Complete local handshake orchestration
-      localStorage.setItem("active_software_user", JSON.stringify(data));
-      router.push('/dashboard');
+      // 3. Force entry to dashboard via native window routing
+      console.log("🎉 AUTH SUCCESS! User ID:", data.user.id);
+      console.log("⚡ Forcing hard redirect to clear Next.js route caches...");
+      
+      setIsSubmitting(false);
+      window.location.href = '/dashboard';
+      
     } catch (err: any) {
+      console.error("💥 CRITICAL SYSTEM RUNTIME CRASH:", err);
       setErrorLog(`RUNTIME_EXCEPTION: ${err.message || err}`);
       setIsSubmitting(false);
     }
@@ -56,7 +90,7 @@ export default function AppsSoftwareLogin(): React.JSX.Element {
             // APPS & software Access
           </span>
           <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight mt-1">
-           APP & SOFTWARE Login
+            APP & SOFTWARE Login
           </h1>
           <p className="text-xs text-gray-500 font-sans mt-1">
             Provide your account login credentials to sync with your account.
@@ -72,16 +106,16 @@ export default function AppsSoftwareLogin(): React.JSX.Element {
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-[11px] font-bold uppercase tracking-wider text-gray-700 block">
-              Email/Username
+              Email / Username
             </label>
             <input
-              name="email"
-              type="email"
+              name="identifier"
+              type="text"
               required
               disabled={isSubmitting}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="operator@system.com"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="operator_name or operator@system.com"
               className="w-full bg-gray-50 border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-600 transition-all"
             />
           </div>
@@ -119,7 +153,6 @@ export default function AppsSoftwareLogin(): React.JSX.Element {
           </button>
         </form>
 
-        {/* Dynamic Wizard Redirection Ribbon */}
         <div className="pt-4 border-t border-gray-100 text-center space-y-3">
           <p className="text-xs text-gray-500">Need a new account? Welcome! </p>
           <Link

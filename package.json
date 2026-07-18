@@ -6,7 +6,8 @@
         "dev": "next dev",
         "build": "next build",
         "start": "next start",
-        "lint": "next lint"
+        "lint": "next lint",
+        "db:seed-stripe": "tsx src/app/scripts/seed-products.ts"
     },
     "dependencies": {
         "@supabase/auth-helpers-nextjs": "^0.15.0",
@@ -17,15 +18,18 @@
         "plaid": "^43.0.0",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
-        "react-plaid-link": "^4.1.1"
+        "react-plaid-link": "^4.1.1",
+        "stripe": "^22.3.2"
     },
     "devDependencies": {
         "@types/node": "^20.12.12",
         "@types/react": "^18.3.3",
         "@types/react-dom": "^18.3.0",
         "autoprefixer": "^10.4.19",
+        "dotenv": "^17.4.2",
         "postcss": "^8.4.38",
         "tailwindcss": "^3.4.3",
+        "tsx": "^4.23.1",
         "typescript": "^5.4.5"
     }
 }

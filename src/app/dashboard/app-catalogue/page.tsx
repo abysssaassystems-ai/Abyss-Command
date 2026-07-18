@@ -21,26 +21,43 @@ export default function AppCataloguePage(): React.JSX.Element {
   const [tenantName, setTenantName] = useState<string>("");
 
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
+    async function initializeCataloguePage() {
       try {
-        const parsed = JSON.parse(session);
-        setTenantEmail(parsed?.email || "");
-        setTenantName(parsed?.account_name || "Enterprise Client");
-      } catch (e) { console.error(e); }
+        // 1. Core Auth Resolution: Drop localStorage and extract directly from secure session token
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setTenantEmail(user.email || "");
+          setTenantName(
+            user.user_metadata?.account_name || 
+            user.user_metadata?.display_name || 
+            "Enterprise Client"
+          );
+        }
+
+        // 2. Database Synchronization: Fetch the seeded item configurations
+        const { data, error } = await supabase
+          .from("app_catalogue")
+          .select("*");
+
+        if (error) {
+          console.error("DATABASE_CATALOGUE_FETCH_ERR:", error.message);
+        } else if (data) {
+          setCatalog(data as CatalogueItem[]);
+        }
+      } catch (err) {
+        console.error("CATALOGUE_INITIALIZATION_EXCEPTION:", err);
+      } finally {
+        setLoading(false);
+      }
     }
 
-    async function loadCatalogue() {
-      const { data } = await supabase.from("app_catalogue").select("*");
-      if (data) setCatalog(data);
-      setLoading(false);
-    }
-    loadCatalogue();
+    initializeCataloguePage();
   }, []);
 
   const handleTriggerCheckout = async (item: CatalogueItem) => {
+    // Verified security assertion validation block
     if (!tenantEmail) {
-      alert("Authentication Error: Active software user session context not resolved inside localStorage.");
+      alert("Authentication Error: Active user token session context could not be resolved.");
       return;
     }
     setCheckingOutId(item.id);
@@ -86,6 +103,12 @@ export default function AppCataloguePage(): React.JSX.Element {
         <div className="h-64 border border-dashed border-zinc-200 rounded-2xl flex flex-col items-center justify-center text-zinc-400 font-mono text-xs gap-2">
           <Cpu className="w-5 h-5 animate-spin text-zinc-400" />
           <span>Synchronizing available cloud catalog indexes...</span>
+        </div>
+      ) : catalog.length === 0 ? (
+        <div className="h-64 border border-dashed border-zinc-200 rounded-2xl flex flex-col items-center justify-center text-zinc-400 font-mono text-xs gap-1">
+          <ShoppingBag className="w-5 h-5 text-zinc-300 mb-1" />
+          <span>No application engine profiles found in registry.</span>
+          <span className="text-[10px] text-zinc-400">Ensure seed.ts execution was run successfully.</span>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

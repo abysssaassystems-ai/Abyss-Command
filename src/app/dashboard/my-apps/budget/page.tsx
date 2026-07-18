@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
-// Import your decoupled modular layout sub-views
 import BankFeedTab from "@/viewbars/personal-finance/BankFeedTab";
 import MonthlyBudgetTab from "@/viewbars/personal-finance/MonthlyBudgetTab";
 import MySubscriptionsTab from "@/viewbars/personal-finance/MySubscriptionsTab";
@@ -52,7 +51,7 @@ export default function BudgetDashboard(): React.JSX.Element {
   const [user, setUser] = useState<any>(null);
   const [hasAccess, setHasAccess] = useState<boolean | null>(null);
 
-  // APP COMPONENT MASTER DATA REPOSITORIES
+  // MASTER DATA REPOSITORIES
   const [purchaseCost, setPurchaseCost] = useState<string>("");
   const [purchaseVerdict, setPurchaseVerdict] = useState<{decision: string; message: string} | null>(null);
   const [investmentInput, setInvestmentInput] = useState<string>("");
@@ -63,64 +62,73 @@ export default function BudgetDashboard(): React.JSX.Element {
   const [subscriptions, setSubscriptions] = useState<SubscriptionBill[]>([]);
   const [vacations, setVacations] = useState<VacationTrip[]>([]);
 
-  // 1. HANDSHAKE VERIFICATION & BILLING ROUTE GUARD
+  // 1. SECURE GATEKEEPER INITIALIZATION
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (!session) {
-      setHasAccess(false);
-      return;
-    }
-
-    const parsedUser = JSON.parse(session);
-    setUser(parsedUser);
-
     async function verifyModuleAccess() {
-      const { data, error } = await supabase
-        .from('client_module_access')
-        .select('is_active')
-        .eq('client_email', parsedUser.email)
-        .eq('module_id', 'personal-finance')
-        .eq('is_active', true)
-        .maybeSingle();
+      try {
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError || !authUser || !authUser.email) {
+          setHasAccess(false);
+          return;
+        }
 
-      if (error || !data) {
+        setUser(authUser);
+
+        // Uses text column matching for permission check
+        const { data, error } = await supabase
+          .from('client_module_access')
+          .select('is_active')
+          .eq('client_email', authUser.email)
+          .eq('module_id', 'personal-finance')
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (error || !data) {
+          setHasAccess(false);
+        } else {
+          setHasAccess(true);
+          // Pass both parameters down to handle database hybrid queries
+          await hydrateFinanceWorkspace(authUser.id);
+        }
+      } catch (err) {
+        console.error("GATEKEEPER_SECURITY_EXCEPTION:", err);
         setHasAccess(false);
-      } else {
-        setHasAccess(true);
-        // Hydrate target tables matching this client's ecosystem keys
-        hydrateFinanceWorkspace(parsedUser.email);
       }
     }
+    
     verifyModuleAccess();
-  }, [activeTab]);
+  }, []);
 
-  // 2. LIVE DATABASE STREAM RETRIEVAL FOR SPECIFIC LOGGED USER
-  async function hydrateFinanceWorkspace(email: string) {
+  // 2. DATA HYDRATION WITH STRUCTURAL TRANSFORMATIONS
+  async function hydrateFinanceWorkspace(userId: string) {
     try {
-      // Pull down checking, savings, and card records from financial_accounts
+      // Querying application tables by user_id instead of client_email
       const { data: dbAccounts } = await supabase
         .from('financial_accounts')
         .select('*')
-        .eq('client_email', email);
+        .eq('user_id', userId);
 
-      // Pull down limits and spends from budget_categories
       const { data: dbCategories } = await supabase
         .from('budget_categories')
         .select('*')
-        .eq('client_email', email);
+        .eq('user_id', userId);
 
-      // Pull down upcoming savings milestones from vacation_goals
       const { data: dbVacations } = await supabase
         .from('vacation_goals')
         .select('*')
-        .eq('client_email', email);
+        .eq('user_id', userId);
 
-      if (dbAccounts) setAccounts(dbAccounts);
-      if (dbCategories) setCategories(dbCategories);
-      if (dbVacations) setVacations(dbVacations);
-
-      // Fallback fallback defaults to maintain layout visibility if initial tables are blank
-      if (!dbAccounts || dbAccounts.length === 0) {
+      // Map financial account structure to expected layout types
+      if (dbAccounts && dbAccounts.length > 0) {
+        setAccounts(dbAccounts.map((acc: any) => ({
+          id: acc.id,
+          name: acc.account_name || "Unnamed Account",
+          type: acc.account_type || "checking",
+          balance: acc.current_balance || 0,
+          institution: acc.institution_label || "External Bank"
+        })));
+      } else {
         setAccounts([
           { id: "acc_1", name: "Main Checking", type: "checking", balance: 3450, institution: "Chase" },
           { id: "acc_2", name: "High-Yield Savings", type: "savings", balance: 12800, institution: "Ally" },
@@ -129,7 +137,15 @@ export default function BudgetDashboard(): React.JSX.Element {
         ]);
       }
 
-      if (!dbCategories || dbCategories.length === 0) {
+      // Map budget properties dynamically
+      if (dbCategories && dbCategories.length > 0) {
+        setCategories(dbCategories.map((cat: any) => ({
+          name: cat.name || "General Expenses",
+          spent: 0, // Default tracking placeholder
+          limit: cat.budget_limit || 0,
+          color: cat.group_type === "essential" ? "bg-blue-500" : "bg-purple-500"
+        })));
+      } else {
         setCategories([
           { name: "Groceries & Food", spent: 420, limit: 600, color: "bg-blue-500" },
           { name: "Entertainment & Play", spent: 180, limit: 250, color: "bg-purple-500" },
@@ -137,13 +153,24 @@ export default function BudgetDashboard(): React.JSX.Element {
         ]);
       }
 
+      // Track upcoming subscription liabilities
       setSubscriptions([
         { id: "sub_1", name: "Netflix Premium", amount: 15.49, dueDate: "In 3 Days" },
         { id: "sub_2", name: "Spotify Family", amount: 16.99, dueDate: "In 8 Days" },
         { id: "sub_3", name: "Gym Membership", amount: 50.00, dueDate: "July 1st" }
       ]);
 
-      if (!dbVacations || dbVacations.length === 0) {
+      // Map vacation goals property names
+      if (dbVacations && dbVacations.length > 0) {
+        setVacations(dbVacations.map((vac: any) => ({
+          id: vac.id,
+          name: vac.destination_title || "Vacation Destination",
+          destination: vac.destination_title || "Global Destination",
+          target: vac.target_funding_amount || 0,
+          saved: vac.accumulated_savings || 0,
+          date: vac.target_departure_date || "2026-12-31"
+        })));
+      } else {
         setVacations([
           { id: "vac_1", name: "Tokyo Summer 2026", destination: "Tokyo, Japan", target: 4500, saved: 3100, date: "2026-08-15" },
           { id: "vac_2", name: "Alps Skiing Trip", destination: "Chamonix, France", target: 3000, saved: 850, date: "2026-12-20" }
@@ -154,15 +181,12 @@ export default function BudgetDashboard(): React.JSX.Element {
     }
   }
 
-  // --- LIVE ISOLATED REVENUE CALCULATORS ---
+  // --- REVENUE CALCULATIONS ---
   const totalAssets = accounts.reduce((acc, curr) => acc + curr.balance, 0);
   const liquidCash = accounts.filter(a => ["checking", "savings"].includes(a.type)).reduce((acc, curr) => acc + curr.balance, 0);
   const upcomingBillsTotal = subscriptions.reduce((acc, curr) => acc + curr.amount, 0);
-  
-  const totalBudgetLimit = categories.reduce((acc, curr) => acc + curr.limit, 0);
-  const totalBudgetSpent = categories.reduce((acc, curr) => acc + curr.spent, 0);
 
-  // --- PREDICTIVE TRANSACTION ALGORITHMS ---
+  // --- EVALUATION ALGORITHMS ---
   const evaluatePurchaseAffordability = (e: React.FormEvent) => {
     e.preventDefault();
     const cost = parseFloat(purchaseCost) || 0;
@@ -201,21 +225,23 @@ export default function BudgetDashboard(): React.JSX.Element {
   };
 
   const handleFundVacation = async (id: string, amount: number) => {
-    if (liquidCash < amount || !user) return;
+    if (liquidCash < amount || !user || !user.id) return;
 
-    // Local state calculation rehydration fallback
-    setVacations(prev => prev.map(v => v.id === id ? { ...v, saved: Math.min(v.saved + amount, v.target) } : v));
+    const currentVacation = vacations.find(v => v.id === id);
+    if (!currentVacation) return;
+    const updatedSavedValue = Math.min(currentVacation.saved + amount, currentVacation.target);
+
+    setVacations(prev => prev.map(v => v.id === id ? { ...v, saved: updatedSavedValue } : v));
     setAccounts(prev => prev.map(a => a.id === "acc_1" ? { ...a, balance: a.balance - amount } : a));
 
-    // Async push update sequence into live vacation_goals table row parameters
+    // Persist to the database using correct user_id and schema column references
     await supabase
       .from('vacation_goals')
-      .update({ saved: vacations.find(v => v.id === id)!.saved + amount })
+      .update({ accumulated_savings: updatedSavedValue })
       .eq('id', id)
-      .eq('client_email', user.email);
+      .eq('user_id', user.id);
   };
 
-  // 3. EMBED BILLING WALL TO PREVENT UNPAID INTERCEPTIONS
   if (hasAccess === false) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center p-6 bg-white select-none">
@@ -235,7 +261,6 @@ export default function BudgetDashboard(): React.JSX.Element {
     );
   }
 
-  // Loading baseline barrier state
   if (hasAccess === null) {
     return (
       <div className="min-h-[50vh] flex items-center justify-center font-mono text-xs text-gray-400 uppercase tracking-widest animate-pulse bg-white select-none">
@@ -246,12 +271,9 @@ export default function BudgetDashboard(): React.JSX.Element {
 
   return (
     <div className="min-h-screen bg-white text-gray-800 font-sans antialiased selection:bg-purple-100 flex flex-col select-none">
-      
-      {/* SECTION WRAPPER: TRIPLE GRADIENT FRAME EMBEDDED LAYOUT CONTAINER PANEL */}
       <div className="p-[1px] bg-gradient-to-r from-purple-600 via-blue-500 to-gray-200 rounded-3xl shadow-xl max-w-6xl w-full mx-auto mt-4">
         <div className="bg-white rounded-[23px] overflow-hidden flex flex-col md:flex-row items-stretch min-h-[75vh]">
           
-          {/* INTERACTIVE NAVIGATION PORTAL SIDEBAR */}
           <aside className="w-full md:w-64 bg-gray-50/50 md:border-r border-b md:border-b-0 border-gray-200 p-4 sm:p-6 shrink-0 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-x-visible custom-scrollbar z-20">
             <span className="text-[9px] font-mono font-bold uppercase text-gray-400 tracking-wider mb-1 hidden md:block">
               // LEDGER SYSTEMS
@@ -318,7 +340,6 @@ export default function BudgetDashboard(): React.JSX.Element {
             </button>
           </aside>
 
-          {/* WORKSPACE CONTENT ROUTER CANVAS */}
           <section className="flex-1 p-6 sm:p-8 overflow-y-auto bg-white relative z-10">
             {activeTab === "overview" && (
               <BankFeedTab accounts={accounts} totalAssets={totalAssets} />

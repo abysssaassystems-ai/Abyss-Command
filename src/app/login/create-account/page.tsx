@@ -59,42 +59,77 @@ export default function CreateSoftwareAccountWizard(): React.JSX.Element {
     setStatusMsg(null);
 
     try {
-      // 1. Write the base contact parameter elements to your onboarding database table
-      const { error: onboardingError } = await supabase
-        .from("apps_and_software_create_account")
-        .insert([{
-          first_name: formData.first_name, last_name: formData.last_name, email: formData.email,
-          phone: formData.phone, title: formData.title, business_name: formData.business_name,
-          address: formData.address, city: formData.city, state: formData.state, zip: formData.zip,
-          is_certified: formData.is_certified
-        }]);
+      // 1. Register the core authentication account
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            username: formData.username,
+            account_name: formData.account_name,
+          }
+        }
+      });
 
-      if (onboardingError) {
-        setStatusMsg({ type: "error", msg: `LEDGER_FAULT: ${onboardingError.message}` });
+      if (authError) {
+        setStatusMsg({ type: "error", msg: `AUTH_FAULT: ${authError.message}` });
         setIsSubmitting(false);
         return;
       }
 
-      // 2. Commit core credential tokens to your login access structure
-      const { error: userError } = await supabase
+      const nativeUser = authData?.user;
+      if (!nativeUser) {
+        setStatusMsg({ type: "error", msg: "AUTH_FAULT: Failed to generate system registration identity token." });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 2. Explicitly write to the clients workspace table
+      const generatedSlug = `${formData.email.split("@")[0]}-${Math.random().toString(36).substring(2, 6)}`;
+      const { error: clientError } = await supabase
         .from("apps_and_software_clients")
         .insert([{
+          id: generatedSlug,
+          user_id: nativeUser.id,
           email: formData.email,
           username: formData.username,
-          password: formData.password,
           account_name: formData.account_name,
           access_level: "client"
         }]);
 
-      if (userError) {
-        setStatusMsg({ type: "error", msg: `PROVISIONING_FAULT: ${userError.message}` });
+      if (clientError) {
+        setStatusMsg({ type: "error", msg: `CLIENT_TABLE_FAULT: ${clientError.message}` });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 3. Explicitly write to the onboarding ledger table
+      const { error: onboardingError } = await supabase
+        .from("apps_and_software_create_account")
+        .insert([{
+          user_id: nativeUser.id,
+          email: formData.email,
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+          phone: formData.phone,
+          title: formData.title,
+          business_name: formData.business_name,
+          address: formData.address,
+          city: formData.city,
+          state: formData.state,
+          zip: formData.zip,
+          is_certified: formData.is_certified
+        }]);
+
+      if (onboardingError) {
+        setStatusMsg({ type: "error", msg: `LEDGER_TABLE_FAULT: ${onboardingError.message}` });
         setIsSubmitting(false);
         return;
       }
 
       setStatusMsg({
         type: "success",
-        msg: "REGISTRATION_COMPLETE: App environment successfully provisioned. Routing back to signature gateway..."
+        msg: "REGISTRATION_COMPLETE: Secure app environment successfully provisioned. Routing to terminal gateway..."
       });
 
       setTimeout(() => {

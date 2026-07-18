@@ -1,6 +1,7 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { supabase } from "@/lib/supabaseClient";
 import BudgetSidebar from "@/components/nodes/BudgetSidebar";
 
 const HealthTrackerCard = () => (
@@ -90,10 +91,72 @@ interface ActiveNode {
 
 export default function Dashboard(): React.JSX.Element {
   const [deployedNodes, setDeployedNodes] = useState<ActiveNode[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [workspaceName, setWorkspaceName] = useState<string>("Loading...");
 
-  const handleRemoveNode = (id: string) => {
-    setDeployedNodes(deployedNodes.filter((node) => node.id !== id));
+  useEffect(() => {
+    async function initDashboardSession() {
+      try {
+        // 1. Ask Supabase Auth who is currently browsing
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if (!user) return;
+
+        // 2. Fetch profile metrics uniquely isolated for this user
+        const { data: profile } = await supabase
+          .from("apps_and_software_clients")
+          .select("account_name")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (profile?.account_name) {
+          setWorkspaceName(profile.account_name);
+        }
+
+        // 3. Fetch user-allocated workspace engine configurations
+        // Note: Make sure your public.user_deployed_nodes table has a user_id column!
+        const { data: nodes, error } = await supabase
+          .from("user_deployed_nodes")
+          .select("node_id, title")
+          .eq("user_id", user.id);
+
+        if (!error && nodes) {
+          setDeployedNodes(nodes.map(n => ({ id: n.node_id, title: n.title })));
+        }
+
+      } catch (err) {
+        console.error("Dashboard ingestion fault:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    initDashboardSession();
+  }, []);
+
+  const handleRemoveNode = async (id: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Remove the module permanently for this user specifically
+    const { error } = await supabase
+      .from("user_deployed_nodes")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("node_id", id);
+
+    if (!error) {
+      setDeployedNodes(prev => prev.filter((node) => node.id !== id));
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center font-mono text-xs text-purple-600 tracking-widest animate-pulse">
+        SYNCING WORKSPACE ENGINES...
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fadeIn select-none">
@@ -101,7 +164,7 @@ export default function Dashboard(): React.JSX.Element {
       {/* Title Header Block */}
       <div className="border-b border-gray-100 pb-5">
         <h1 className="text-3xl font-black italic uppercase tracking-tight text-gray-900">
-          Active Workspace <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-blue-600">Online</span>
+          {workspaceName} <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-blue-600">Online</span>
         </h1>
         <p className="text-xs text-gray-500 mt-1 font-sans">Workspace for apps and software systems.</p>
       </div>
@@ -117,7 +180,6 @@ export default function Dashboard(): React.JSX.Element {
             {deployedNodes.map((node) => {
               const VisualCard = CATALOGUE_COMPONENTS[node.id];
               return (
-                /* Dynamic multi-color gradient border frame container wrapper */
                 <div key={node.id} className="p-[1px] bg-gradient-to-br from-purple-600 via-blue-500 to-gray-300 rounded-3xl shadow-md group relative animate-fadeIn transition-all duration-300 hover:shadow-lg">
                   <button 
                     type="button"

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 import { 
   AppWindow, 
   LifeBuoy, 
@@ -19,27 +20,30 @@ export default function AppsAcctSidebar(): React.JSX.Element {
   const [accountName, setAccountName] = useState<string>("Client Engine");
   const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
-  // Ingest the local software user session to parse out the identity signatures safely
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (!session) {
-      setTenantEmail("unauthenticated_session");
-      return;
-    }
-    try {
-      const parsedSession = JSON.parse(session);
-      if (parsedSession?.account_name) {
-        setAccountName(parsedSession.account_name);
+    async function loadSidebarIdentity() {
+      // Pull directly from the secure local auth token metadata
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (error || !user) {
+        setTenantEmail("unauthenticated_session");
+        setAccountName("Client Engine");
+        return;
       }
-      if (parsedSession?.email) {
-        setTenantEmail(parsedSession.email);
+
+      setTenantEmail(user.email || "isolated_anonymous");
+      
+      // Read directly from user_metadata to completely bypass database RLS blocks
+      if (user.user_metadata?.account_name) {
+        setAccountName(user.user_metadata.account_name);
+      } else if (user.user_metadata?.display_name) {
+        setAccountName(user.user_metadata.display_name);
       } else {
-        setTenantEmail("isolated_anonymous");
+        setAccountName("Client Workspace");
       }
-    } catch (err) {
-      console.error("SESSION_PARSE_ERROR:", err);
-      setTenantEmail("fault_containment_mode");
     }
+
+    loadSidebarIdentity();
   }, []);
 
   const menuRoutes = [
@@ -54,7 +58,6 @@ export default function AppsAcctSidebar(): React.JSX.Element {
     <aside className="w-64 h-screen bg-white border-r border-zinc-200 flex flex-col justify-between p-5 select-none sticky top-0 z-50 text-left">
       <div className="space-y-6">
         
-        {/* Workspace Branding Header Identifier */}
         <div className="border-b border-zinc-100 pb-5">
           <Link href="/dashboard" className="flex items-center gap-3 group focus:outline-none">
             <div className="p-2 bg-zinc-950 rounded-xl text-white transition-colors group-hover:bg-zinc-800">
@@ -71,7 +74,6 @@ export default function AppsAcctSidebar(): React.JSX.Element {
           </Link>
         </div>
 
-        {/* Dynamic Tenant Context Partition Pin */}
         <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3 flex items-center gap-2.5">
           <Fingerprint className="w-4 h-4 text-zinc-500 shrink-0 stroke-[2.5]" />
           <div className="min-w-0">
@@ -84,7 +86,6 @@ export default function AppsAcctSidebar(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Directory Matrix Navigation List */}
         <nav className="flex flex-col space-y-1">
           <span className="text-[10px] font-mono font-black uppercase text-zinc-400 tracking-widest mb-2 px-1 block">
             Navigation Panel
@@ -114,7 +115,6 @@ export default function AppsAcctSidebar(): React.JSX.Element {
         </nav>
       </div>
 
-      {/* Footer Infrastructure Validation Block */}
       <div className="border-t border-zinc-100 pt-4 space-y-3">
         <div className="flex items-center gap-2 px-1 text-zinc-500">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />

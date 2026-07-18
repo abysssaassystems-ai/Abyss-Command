@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { Search, Loader2, Plus, Film, Tv, Gamepad2, BookOpen } from 'lucide-react';
+import { Search, Loader2, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import MediaSidebar from '@/components/MediaSidebar';
 
@@ -50,50 +50,58 @@ export default function MediaDashboardPage(): React.JSX.Element {
     }
   }, [searchQuery]);
 
-  // 1. BILLING LAYER AND ACCESS HANDSHAKE ROUTE GUARD
+  // 1. NATIVE AUTH AND ACCESS HANDSHAKE ROUTE GUARD
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (!session) {
-      setHasAccess(false);
-      return;
-    }
-
-    const parsedUser = JSON.parse(session);
-    setUser(parsedUser);
-
     async function verifyModuleAccess() {
-      const { data, error } = await supabase
-        .from('client_module_access')
-        .select('is_active')
-        .eq('client_email', parsedUser.email)
-        .eq('module_id', 'my-media')
-        .eq('is_active', true)
-        .maybeSingle();
+      try {
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
-      if (error || !data) {
+        if (authError || !authUser || !authUser.email) {
+          setHasAccess(false);
+          return;
+        }
+
+        setUser(authUser);
+
+        // Verify module entry token permissions context inside gateway
+        const { data, error } = await supabase
+          .from('client_module_access')
+          .select('is_active')
+          .eq('client_email', authUser.email)
+          .eq('module_id', 'my-media')
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (error || !data) {
+          setHasAccess(false);
+        } else {
+          setHasAccess(true);
+          // Sync workspace repositories using native identities
+          await hydrateTenantWorkspace(authUser.id, authUser.email);
+        }
+      } catch (err) {
+        console.error("MEDIA_SECURITY_HANDSHAKE_EXCEPTION:", err);
         setHasAccess(false);
-      } else {
-        setHasAccess(true);
-        // Hydrate isolated tenant repositories upon successful handshake
-        hydrateTenantWorkspace(parsedUser.email);
       }
     }
+    
     verifyModuleAccess();
   }, [activeTab]);
 
   // 2. LIVE DATABASE STREAM RETRIEVAL FOR SPECIFIC LOGGED USER
-  async function hydrateTenantWorkspace(email: string) {
+  async function hydrateTenantWorkspace(userId: string, email: string) {
     try {
+      // Robust multi-column lookup fallback to protect custom schemas
       const { data: movies } = await supabase
         .from('tracked_movies')
         .select('*')
-        .eq('client_email', email)
+        .or(`user_id.eq.${userId},client_email.eq.${email}`)
         .order('created_at', { ascending: false });
 
       const { data: shows } = await supabase
         .from('tracked_shows')
         .select('*')
-        .eq('client_email', email)
+        .or(`user_id.eq.${userId},client_email.eq.${email}`)
         .order('created_at', { ascending: false });
 
       if (movies) setTrackedMovies(movies);
@@ -128,7 +136,7 @@ export default function MediaDashboardPage(): React.JSX.Element {
     }
   };
 
-  // 3. SECURE ASSET WRITING CONTEXT WITH STRICT CLIENT_EMAIL BINDING
+  // 3. SECURE ASSET WRITING CONTEXT WITH DUAL BINDING
   const handleAddMedia = async (item: any, forcedType?: string) => {
     if (!user) return;
 
@@ -139,7 +147,8 @@ export default function MediaDashboardPage(): React.JSX.Element {
     try {
       // Build normalized payload mapping your schema definitions
       const insertPayload = {
-        client_email: user.email, // Injects explicit multi-tenant validation keys
+        user_id: user.id,              // Secure native UUID target
+        client_email: user.email,      // Legacy backward-compatibility string
         title: item.title,
         poster: item.poster,
         release_year: item.releaseDate ? item.releaseDate.split('-')[0] : 'Unknown',
@@ -160,7 +169,7 @@ export default function MediaDashboardPage(): React.JSX.Element {
 
       alert(`"${item.title}" successfully committed to your secure database container.`);
       setSearchQuery('');
-      hydrateTenantWorkspace(user.email);
+      hydrateTenantWorkspace(user.id, user.email);
 
     } catch (dbError) {
       console.error('Programmatic mutation fault boundary exception:', dbError);
@@ -170,7 +179,7 @@ export default function MediaDashboardPage(): React.JSX.Element {
   // 4. EMBED BILLING WALL TO PREVENT ACCESS TO UNPAID CLIENTS
   if (hasAccess === false) {
     return (
-      <div className="min-h-[70vh] flex items-center justify-center p-6 bg-white">
+      <div className="min-h-[70vh] flex items-center justify-center p-6 bg-white select-none">
         <div className="p-[1px] bg-gradient-to-br from-purple-600 via-blue-500 to-gray-200 rounded-3xl shadow-xl max-w-md w-full">
           <div className="bg-white rounded-[23px] p-8 text-center space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto border border-purple-100 text-purple-600 font-bold">🔒</div>
@@ -178,7 +187,7 @@ export default function MediaDashboardPage(): React.JSX.Element {
             <p className="text-xs text-gray-500 leading-relaxed">
               Your organization has not deployed the Media Management Module infrastructure yet. You can unlock and purchase access directly from your account marketplace catalogue.
             </p>
-            <Link href="/dashboard/app-catalogue" className="block w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md">
+            <Link href="/dashboard/app-catalogue" className="block w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md hover:opacity-95">
               Unlock Terminal Core ($9.99/mo)
             </Link>
           </div>
@@ -190,14 +199,14 @@ export default function MediaDashboardPage(): React.JSX.Element {
   // Loading boundary while database validates session signatures
   if (hasAccess === null) {
     return (
-      <div className="min-h-[50vh] flex items-center justify-center font-mono text-xs text-gray-400 uppercase tracking-widest animate-pulse bg-white">
+      <div className="min-h-[50vh] flex items-center justify-center font-mono text-xs text-gray-400 uppercase tracking-widest animate-pulse bg-white select-none">
         // Syncing workspace security keys...
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen w-full bg-white overflow-hidden text-gray-800 font-sans selection:bg-purple-100">
+    <div className="flex h-screen w-full bg-white overflow-hidden text-gray-800 font-sans selection:bg-purple-100 select-none">
       
       {/* Sidebar Subnavigation */}
       <MediaSidebar activeTab={activeTab as any} setActiveTab={setActiveTab} />
@@ -223,7 +232,7 @@ export default function MediaDashboardPage(): React.JSX.Element {
           {/* User Meta Tracking Indicators */}
           <div className="flex items-center gap-3">
             <div className="flex flex-col text-right hidden sm:block">
-              <p className="text-xs font-black text-gray-900">{user?.account_name || "Authorized Client"}</p>
+              <p className="text-xs font-black text-gray-900">{user?.user_metadata?.account_name || "Authorized Client"}</p>
               <p className="text-[9px] font-mono text-purple-600 font-bold tracking-wider uppercase">Secure Enclave Active</p>
             </div>
             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-600 via-blue-600 to-gray-400 flex items-center justify-center font-black text-white text-xs shadow-md">
@@ -235,7 +244,6 @@ export default function MediaDashboardPage(): React.JSX.Element {
         {/* ACTIVE WORKSPACE CANVAS MODULE */}
         <main className="flex-1 p-6 md:p-8 bg-white">
           
-          {/* SEARCH INTERSTITIAL ACTIVE SPINNER */}
           {isSearching && (
             <div className="w-full h-64 flex flex-col items-center justify-center gap-2 text-gray-400">
               <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
@@ -243,7 +251,6 @@ export default function MediaDashboardPage(): React.JSX.Element {
             </div>
           )}
 
-          {/* RENDER DYNAMIC NETWORK RESULTS INSIDE THE TRIPLE GRADIENT BORDER BOX CONFIGURATIONS */}
           {!isSearching && searchQuery.trim() !== '' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">
@@ -266,7 +273,6 @@ export default function MediaDashboardPage(): React.JSX.Element {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {searchResults.map((item) => (
-                    /* Embedded Multi-Color Border Outline Wrapper Frame */
                     <div 
                       key={item.id} 
                       className="p-[1px] bg-gradient-to-br from-purple-600 via-blue-500 to-gray-200 rounded-2xl shadow-sm hover:shadow-md transition-all aspect-[2/3] flex flex-col justify-end p-4 relative overflow-hidden group cursor-pointer"
@@ -298,7 +304,6 @@ export default function MediaDashboardPage(): React.JSX.Element {
             </div>
           )}
 
-          {/* CATALOG RUNTIME DEFAULT CONTAINER MANAGEMENT MENUS */}
           {!isSearching && searchQuery.trim() === '' && (
             <div className="w-full h-full">
               {activeTab === 'overview' && <MediaOverviewTab />}

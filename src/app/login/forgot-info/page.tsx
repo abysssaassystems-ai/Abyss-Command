@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
@@ -8,7 +9,7 @@ type RecoveryType = "password" | "username" | "both" | null;
 export default function ForgotSoftwareInfoRecovery(): React.JSX.Element {
   const [step, setStep] = useState<number>(1);
   const [recoveryType, setRecoveryType] = useState<RecoveryType>(null);
-  const [email, setEmail] = useState<string>( " ");
+  const [email, setEmail] = useState<string>(""); // Fixed: Initialized to clean empty string
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
@@ -23,27 +24,21 @@ export default function ForgotSoftwareInfoRecovery(): React.JSX.Element {
     setIsSubmitting(true);
     setStatusMsg(null);
 
+    const targetEmail = email.trim();
+
     try {
-      // Cross-reference registry lookup against apps_and_software_clients
-      const { data, error } = await supabase
-        .from("apps_and_software_clients")
-        .select("account_name")
-        .eq("email", email.trim())
-        .maybeSingle();
+      // Native secure recovery broadcast. Bypasses client-side RLS limits safely.
+      const { error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+        redirectTo: `${window.location.origin}/login`, 
+      });
 
       if (error) {
-        setStatusMsg({ type: "error", msg: `REGISTRY_LOOKUP_FAULT: ${error.message}` });
+        setStatusMsg({ type: "error", msg: `SUPABASE_RECOVERY_FAULT: ${error.message}` });
         setIsSubmitting(false);
         return;
       }
 
-      if (!data) {
-        setStatusMsg({ type: "error", msg: "No registered client core container discovered matching that address." });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Move straight to the final confirmation module layer
+      // Move to success display safely
       setStep(3);
     } catch (err: any) {
       setStatusMsg({ type: "error", msg: `RUNTIME_ERROR: ${err.message || err}` });
@@ -83,7 +78,7 @@ export default function ForgotSoftwareInfoRecovery(): React.JSX.Element {
         {step === 1 && (
           <div className="space-y-4 animate-fadeIn">
             <p className="text-xs text-gray-500 font-sans text-center mb-5">
-              Select the credential  you need help restoring to your account:
+              Select the credential you need help restoring to your account:
             </p>
             <div className="space-y-3 font-mono text-[11px]">
               <button type="button" onClick={() => handleSelection("password")} className="w-full p-4 text-left border border-gray-200 rounded-2xl hover:border-purple-600 hover:bg-purple-50/50 transition-all flex justify-between items-center group">
@@ -124,10 +119,10 @@ export default function ForgotSoftwareInfoRecovery(): React.JSX.Element {
             </div>
             <button
               type="submit"
-              disabled={isSubmitting || !email}
+              disabled={isSubmitting || !email.trim()}
               className="w-full py-3.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-md transition-all focus:outline-none"
             >
-              {isSubmitting ? "Verifying Token Existence..." : "Dispatch Secure Restoration Request"}
+              {isSubmitting ? "Transmitting Request..." : "Dispatch Secure Restoration Request"}
             </button>
           </form>
         )}
@@ -141,11 +136,11 @@ export default function ForgotSoftwareInfoRecovery(): React.JSX.Element {
             <div className="space-y-2">
               <h3 className="text-sm font-black uppercase tracking-wide text-gray-900">Recovery Matrix Triggered</h3>
               <p className="text-xs text-gray-600 leading-relaxed max-w-[290px] mx-auto bg-gray-50 p-4 rounded-xl border border-gray-200">
-                A secure reset sequence has been generated. <strong className="text-purple-700 block mt-2">The reset instructions and secure link will be sent directly from Supabase.</strong> Please disregard any other reset emails.
+                A secure reset sequence has been generated. <strong className="text-purple-700 block mt-2">The reset instructions and secure link will be sent directly from Supabase if an account matches.</strong>
               </p>
             </div>
             <Link
-              href="/apps-software/login"
+              href="/login"
               className="block w-full py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs uppercase tracking-widest rounded-xl transition-all border border-gray-200"
             >
               Return to Login Screen
@@ -155,7 +150,7 @@ export default function ForgotSoftwareInfoRecovery(): React.JSX.Element {
 
         {step < 3 && (
           <div className="pt-4 border-t border-gray-100 text-center">
-            <Link href="/apps-software/login" className="text-[10px] text-gray-400 hover:text-gray-600 font-bold uppercase tracking-wider transition-colors inline-block">
+            <Link href="/login" className="text-[10px] text-gray-400 hover:text-gray-600 font-bold uppercase tracking-wider transition-colors inline-block">
               Cancel & Return to Portal
             </Link>
           </div>

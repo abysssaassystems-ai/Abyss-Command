@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Initialize a dedicated private server-side bypass runtime client
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // Leverages structural bypass to update restricted scopes
+  process.env.SUPABASE_SERVICE_ROLE_KEY! 
 );
 
 export async function GET(req: Request) {
@@ -33,7 +32,6 @@ async function handleProcessPayload(req: Request) {
       amountCents = parseInt(searchParams.get("amount_cents") || "0", 10);
       appName = searchParams.get("app_name") || "Solution Pack";
     } else {
-      // Standard Production Stripe Parsing Framework Hook
       const stripePayload = await req.json();
       if (stripePayload?.type === "checkout.session.completed") {
         const session = stripePayload.data.object;
@@ -48,24 +46,24 @@ async function handleProcessPayload(req: Request) {
       return NextResponse.json({ received: false, error: "Validation keys unverified." }, { status: 400 });
     }
 
-    // 1. Provision Software Ownership Access Card Entry Point
-   // 1. Provision Software Ownership Access Card Entry Point (Safe Upsert)
-   const { error: assetErr } = await supabaseAdmin
-   .from("client_owned_apps")
-   .upsert(
-     {
-       client_email: clientEmail,
-       app_id: appId,
-       status: "active"
-     },
-     { 
-       onConflict: "client_email,app_id" 
-     }
-   );
+    // 1. Provision Software Ownership Access Card Entry Point (Safe Upsert)
+    const { error: assetErr } = await supabaseAdmin
+      .from("client_owned_apps")
+      .upsert(
+        {
+          client_email: clientEmail,
+          app_id: appId,
+          status: "active"
+        },
+        { 
+          onConflict: "client_email,app_id" 
+        }
+      );
 
- if (assetErr) {
-   console.error("WEBHOOK_ASSET_PROVISION_FAULT:", assetErr);
- }
+    if (assetErr) {
+      console.error("WEBHOOK_ASSET_PROVISION_FAULT:", assetErr);
+      return NextResponse.json({ error: "Failed to provision asset" }, { status: 500 });
+    }
 
     // 2. Generate and Log Structural Financial History Data Stream
     const randomInvoiceNum = `INV-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -77,7 +75,7 @@ async function handleProcessPayload(req: Request) {
         client_name: clientName,
         amount_cents: amountCents,
         payment_status: "paid",
-        client_address: "128 Innovation Way, Suite B", // Baseline fallback structures
+        client_address: "128 Innovation Way, Suite B",
         client_city: "Austin",
         client_state: "TX"
       }]);
@@ -86,8 +84,12 @@ async function handleProcessPayload(req: Request) {
       console.error("WEBHOOK_INVOICE_LOGGING_FAULT:", invoiceErr);
     }
 
-    // Gracefully send client back home into their secured dashboard interface
-    return NextResponse.redirect(new URL("/dashboard/my-apps", req.url));
+    // 💡 FIX: Redirect human simulator users, but reply with JSON 200 to Stripe servers
+    if (isSimulated) {
+      return NextResponse.redirect(new URL("/dashboard/my-apps", req.url));
+    }
+
+    return NextResponse.json({ received: true });
 
   } catch (err: any) {
     console.error("CRITICAL_WEBHOOK_EXCEPTION_CATCH:", err);

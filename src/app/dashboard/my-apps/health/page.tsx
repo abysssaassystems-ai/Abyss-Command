@@ -4,13 +4,13 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import HealthSidebar from "@/components/HealthSidebar";
-import NutritionTab from "@/viewbars/NutritionTab";
-import MealsTab from "@/viewbars/MealsTab";
-import WorkoutsTab from "@/viewbars/WorkoutsTab";
-import GoalsTab from "@/viewbars/GoalsTab";
-import OverviewTab from "@/viewbars/OverviewTab";
-import SupplementsTab from "@/viewbars/SupplementsTab";
-import TrendsTab from "@/viewbars/TrendsTab";
+import NutritionTab from "@/viewbars/health/NutritionTab";
+import MealsTab from "@/viewbars/health/MealsTab";
+import WorkoutsTab from "@/viewbars/health/WorkoutsTab";
+import GoalsTab from "@/viewbars/health/GoalsTab";
+import OverviewTab from "@/viewbars/health/OverviewTab";
+import SupplementsTab from "@/viewbars/health/SupplementsTab";
+import TrendsTab from "@/viewbars/health/TrendsTab";
 
 // Processors and types imported directly from local utilities
 import { calculateMetabolicBaseline, calculateCaloricTarget, calculateMacronutrientSplit } from "./processors";
@@ -23,7 +23,7 @@ export default function HealthHub(): React.JSX.Element {
   const [user, setUser] = useState<any>(null);
   const [hasAccess, setHasAccess] = useState<boolean | null>(null);
 
-  // GLOBAL BIOMETRIC STATES (Feeds baseline calculus arrays dynamically)
+  // GLOBAL BIOMETRIC STATES
   const [weight, setWeight] = useState<number>(82);
   const [height, setHeight] = useState<number>(180);
   const [age, setAge] = useState<number>(28);
@@ -37,43 +37,50 @@ export default function HealthHub(): React.JSX.Element {
 
   // 1. HANDSHAKE VERIFICATION & BILLING ROUTE GUARD
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (!session) {
-      setHasAccess(false);
-      return;
-    }
-
-    const parsedUser = JSON.parse(session);
-    setUser(parsedUser);
-
     async function verifyModuleAccess() {
-      const { data, error } = await supabase
-        .from('client_module_access')
-        .select('is_active')
-        .eq('client_email', parsedUser.email)
-        .eq('module_id', 'health-tracker')
-        .eq('is_active', true)
-        .maybeSingle();
+      try {
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
-      if (error || !data) {
+        if (authError || !authUser || !authUser.email) {
+          setHasAccess(false);
+          return;
+        }
+
+        setUser(authUser);
+
+        // Verify module entry entitlement permissions criteria records
+        const { data, error } = await supabase
+          .from('client_module_access')
+          .select('is_active')
+          .eq('client_email', authUser.email)
+          .eq('module_id', 'health-tracker')
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (error || !data) {
+          setHasAccess(false);
+        } else {
+          setHasAccess(true);
+          // Hydrate dynamic data using user ID to match database tables
+          await hydrateHealthWorkspace(authUser.id);
+        }
+      } catch (err) {
+        console.error("HEALTH_SECURITY_EXEC_EXCEPTION:", err);
         setHasAccess(false);
-      } else {
-        setHasAccess(true);
-        // Hydrate module schemas matching this specific user profile
-        hydrateHealthWorkspace(parsedUser.email);
       }
     }
-    verifyModuleAccess();
-  }, [activeTab]);
 
-  // 2. LIVE DATABASE STREAM RETRIEVAL FOR SPECIFIC LOGGED USER
-  async function hydrateHealthWorkspace(email: string) {
+    verifyModuleAccess();
+  }, []);
+
+  // 2. LIVE DATABASE STREAM RETRIEVAL VIA USER_ID
+  async function hydrateHealthWorkspace(userId: string) {
     try {
       // Pull dynamic biometric variables out of daily_biometrics_log
       const { data: biometrics } = await supabase
         .from('daily_biometrics_log')
         .select('*')
-        .eq('client_email', email)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -89,18 +96,18 @@ export default function HealthHub(): React.JSX.Element {
       const { data: dbFoods } = await supabase
         .from('food_logs')
         .select('*')
-        .eq('client_email', email);
+        .eq('user_id', userId);
 
       // Stream custom stack arrays from supplement_logs
       const { data: dbSupps } = await supabase
         .from('supplement_logs')
         .select('*')
-        .eq('client_email', email);
+        .eq('user_id', userId);
 
-      if (dbFoods) setFoodLog(dbFoods);
-      if (dbSupps) setSupplementStack(dbSupps);
+      if (dbFoods && dbFoods.length > 0) setFoodLog(dbFoods);
+      if (dbSupps && dbSupps.length > 0) setSupplementStack(dbSupps);
 
-      // Render fallback initial entries if workspace database lists are pristine empty
+      // Fixed Comment Syntax: Render fallback initial entries if records are pristine empty
       if (!dbFoods || dbFoods.length === 0) {
         setFoodLog([
           { id: "b1", name: "Scrambled Eggs", servingText: "2 Each", protein: 12, carbs: 1, fats: 10, calories: 140, mealType: "breakfast" },
@@ -131,7 +138,6 @@ export default function HealthHub(): React.JSX.Element {
   const totalCarbs = foodLog.reduce((acc, item) => acc + item.carbs, 0);
   const totalFats = foodLog.reduce((acc, item) => acc + item.fats, 0);
 
-  // 3. EMBED BILLING WALL TO BLOCKED UNPAID INSTANCES
   if (hasAccess === false) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center p-6 bg-white select-none">
@@ -142,7 +148,7 @@ export default function HealthHub(): React.JSX.Element {
             <p className="text-xs text-gray-500 leading-relaxed">
               Your active workspace profile has not verified a license deployment for the Bio-Engine Biometrics tracking console node. Provision access immediately from the marketplace.
             </p>
-            <Link href="/dashboard/app-catalogue" className="block w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md">
+            <Link href="/dashboard/app-catalogue" className="block w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md hover:opacity-95">
               Unlock Module Terminal ($9.99/mo)
             </Link>
           </div>
@@ -159,25 +165,17 @@ export default function HealthHub(): React.JSX.Element {
     );
   }
 
-  // 4. CLEAN HIGH CONTRAST ASYMMETRIC SYSTEM GRAPHIC LAYOUT
   return (
     <div className="min-h-screen bg-white text-gray-800 flex font-sans antialiased select-none">
-      
-      {/* Left Hand Command Panel Nav Sideframe */}
       <HealthSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {/* Main Structural Runtime Frame Context Wrapper Container */}
       <main className="flex-1 overflow-y-auto w-full min-h-screen flex flex-col lg:flex-row border-l border-gray-200 bg-white">
-        
-        {/* Wide Interactive Workplace Workspace Canvas */}
         <div className="flex-1 p-6 md:p-8 space-y-6 max-w-5xl bg-white">
           
           {activeTab === "overview" && (
             <OverviewTab 
               foodLog={foodLog} 
               setFoodLog={setFoodLog}
-              supplementStack={supplementStack}
-              setSupplementStack={setSupplementStack}
               targetCalories={caloricTarget.payload.targetCalories}
             />
           )}
@@ -200,10 +198,8 @@ export default function HealthHub(): React.JSX.Element {
           {activeTab === "trends" && (
             <TrendsTab foodLog={foodLog} />
           )}
-
         </div>
 
-        {/* Right Side Asymmetric Status Bar Frame (The Telemetry Stack Panel Outline Wrapper) */}
         <div className="w-full lg:w-80 bg-gray-50/70 border-t lg:border-t-0 lg:border-l border-gray-200 p-6 space-y-6 shrink-0 z-10">
           <div>
             <span className="text-[10px] font-mono font-black text-purple-600 uppercase tracking-widest block mb-0.5">
@@ -225,7 +221,6 @@ export default function HealthHub(): React.JSX.Element {
               <span className="text-blue-600 font-bold">{metabolicBaseline.payload.tdee} kcal</span>
             </div>
 
-            {/* Micro-Padded Gradient Allocation Framework Gauge Box */}
             <div className="p-[1px] bg-gradient-to-br from-purple-600 via-blue-500 to-gray-200 rounded-2xl shadow-sm">
               <div className="bg-white rounded-[15px] p-4 space-y-4">
                 <span className="text-[10px] text-gray-400 font-black uppercase tracking-wider block border-b border-gray-100 pb-1">
@@ -274,7 +269,6 @@ export default function HealthHub(): React.JSX.Element {
 
           </div>
         </div>
-
       </main>
     </div>
   );

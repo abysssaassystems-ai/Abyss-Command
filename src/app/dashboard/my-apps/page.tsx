@@ -14,30 +14,41 @@ interface OwnedApp {
     name: string;
     description: string;
     category: string;
-  };
+  } | {
+    name: string;
+    description: string;
+    category: string;
+  }[]; // Accounting for array wrapping variations from Supabase relational mappings
 }
 
 export default function MyOwnedAppsPage(): React.JSX.Element {
   const [ownedApps, setOwnedApps] = useState<OwnedApp[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [tenantEmail, setTenantEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("resolving session...");
 
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (!session) {
-      setLoading(false);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(session);
-      if (parsed?.email) {
-        setTenantEmail(parsed.email);
-        fetchTenantAssets(parsed.email);
+    async function initializeAssetsContext() {
+      try {
+        // 1. Drop localStorage and pull user metadata securely from active session cookie
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !user || !user.email) {
+          setTenantEmail("");
+          setLoading(false);
+          return;
+        }
+
+        setTenantEmail(user.email);
+
+        // 2. Load the authenticated user's authorized software assets
+        await fetchTenantAssets(user.email);
+      } catch (err) {
+        console.error("MY_APPS_HYDRATION_ERROR:", err);
+        setLoading(false);
       }
-    } catch (e) {
-      console.error("MY_APPS_HYDRATION_ERROR:", e);
-      setLoading(false);
     }
+
+    initializeAssetsContext();
   }, []);
 
   async function fetchTenantAssets(email: string) {
@@ -57,8 +68,10 @@ export default function MyOwnedAppsPage(): React.JSX.Element {
         `)
         .eq("client_email", email);
 
-      if (!error && data) {
-        setOwnedApps(data as any);
+      if (error) {
+        console.error("DATABASE_ASSET_FETCH_ERR:", error.message);
+      } else if (data) {
+        setOwnedApps(data as any[]);
       }
     } catch (err) {
       console.error("ASSET_FETCH_EXCEPTION:", err);
@@ -69,6 +82,7 @@ export default function MyOwnedAppsPage(): React.JSX.Element {
 
   return (
     <main className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 text-left min-h-screen bg-white">
+      
       {/* Structural Section Header */}
       <div className="border-b border-zinc-200 pb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -112,50 +126,57 @@ export default function MyOwnedAppsPage(): React.JSX.Element {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {ownedApps.map((asset) => (
-            <div 
-              key={asset.id} 
-              className="bg-white border border-zinc-200 rounded-2xl p-5 flex flex-col justify-between space-y-5 shadow-2xs hover:border-zinc-300 transition-colors"
-            >
-              <div className="space-y-3">
-                <div className="flex justify-between items-start">
-                  <span className="text-[9px] bg-zinc-100 border border-zinc-200 text-zinc-700 font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-md">
-                    {asset.app_catalogue?.category}
-                  </span>
-                  <span className={`text-[10px] font-mono font-bold uppercase tracking-wide flex items-center gap-1.5 ${
-                    asset.status === 'active' ? 'text-emerald-700' : 'text-amber-600'
-                  }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${asset.status === 'active' ? 'bg-emerald-600' : 'bg-amber-500'}`} />
-                    {asset.status}
-                  </span>
+          {ownedApps.map((asset) => {
+            // Safe extraction block handling both object data shapes and single-element array maps
+            const details = Array.isArray(asset.app_catalogue)
+              ? asset.app_catalogue[0]
+              : asset.app_catalogue;
+
+            return (
+              <div 
+                key={asset.id} 
+                className="bg-white border border-zinc-200 rounded-2xl p-5 flex flex-col justify-between space-y-5 shadow-2xs hover:border-zinc-300 transition-colors"
+              >
+                <div className="space-y-3">
+                  <div className="flex justify-between items-start">
+                    <span className="text-[9px] bg-zinc-100 border border-zinc-200 text-zinc-700 font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-md">
+                      {details?.category || "General Solution"}
+                    </span>
+                    <span className={`text-[10px] font-mono font-bold uppercase tracking-wide flex items-center gap-1.5 ${
+                      asset.status === 'active' ? 'text-emerald-700' : 'text-amber-600'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${asset.status === 'active' ? 'bg-emerald-600' : 'bg-amber-500'}`} />
+                      {asset.status}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h3 className="font-sans font-bold text-base text-zinc-900 leading-snug">
+                      {details?.name || "System Application Engine"}
+                    </h3>
+                    <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed">
+                      {details?.description || "No supplemental manifest information discovered."}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <h3 className="font-sans font-bold text-base text-zinc-900 leading-snug">
-                    {asset.app_catalogue?.name}
-                  </h3>
-                  <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed">
-                    {asset.app_catalogue?.description}
-                  </p>
+                <div className="pt-4 border-t border-zinc-100 space-y-3">
+                  <div className="bg-zinc-50 border border-zinc-200 p-2.5 rounded-xl font-mono text-[9px] text-zinc-500">
+                    <span className="block font-black text-zinc-400 uppercase tracking-tight text-[8px]">Secured License Anchor</span>
+                    <span className="select-all block mt-0.5 font-bold truncate text-zinc-700">{asset.license_key || "UNASSIGNED_LICENSE"}</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="w-full h-11 border border-zinc-200 text-zinc-900 text-xs font-mono font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 hover:bg-zinc-950 hover:text-white"
+                  >
+                    <span>Launch Module</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
-
-              <div className="pt-4 border-t border-zinc-100 space-y-3">
-                <div className="bg-zinc-50 border border-zinc-200 p-2.5 rounded-xl font-mono text-[9px] text-zinc-500">
-                  <span className="block font-black text-zinc-400 uppercase tracking-tight text-[8px]">Secured License Anchor</span>
-                  <span className="select-all block mt-0.5 font-bold truncate text-zinc-700">{asset.license_key}</span>
-                </div>
-
-                <button
-                  type="button"
-                  className="w-full h-11 border border-zinc-200 hover:border-zinc-950 text-zinc-900 text-xs font-mono font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 hover:bg-zinc-950 hover:text-white"
-                >
-                  <span>Launch Module</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </main>

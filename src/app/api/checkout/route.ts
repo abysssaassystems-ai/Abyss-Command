@@ -9,8 +9,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required parameter payloads." }, { status: 400 });
     }
 
-    // Dynamic state metadata string packaging for webhook decoding
-    const checkoutSuccessSimulationUrl = `${req.headers.get("origin")}/api/webhook/stripe?simulated=true&client_email=${encodeURIComponent(clientEmail)}&client_name=${encodeURIComponent(clientName)}&app_id=${appId}&amount_cents=${priceCents}&app_name=${encodeURIComponent(appName)}`;
+    // Package simulation url payload containing transaction contexts
+    const origin = req.headers.get("origin") || "";
+    const checkoutSuccessSimulationUrl = `${origin}/api/webhook/stripe?simulated=true&client_email=${encodeURIComponent(clientEmail)}&client_name=${encodeURIComponent(clientName)}&app_id=${appId}&amount_cents=${priceCents}&app_name=${encodeURIComponent(appName)}`;
 
     return NextResponse.json({ url: checkoutSuccessSimulationUrl });
   } catch (err: any) {

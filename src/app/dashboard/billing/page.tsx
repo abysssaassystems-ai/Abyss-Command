@@ -33,34 +33,46 @@ export default function CorporateBillingPage(): React.JSX.Element {
   };
 
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (!session) {
-      setLoading(false);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(session);
-      if (parsed?.email) {
-        fetchInvoices(parsed.email);
+    async function initializeBillingContext() {
+      try {
+        // 1. Core Auth Resolution: Drop localStorage and extract directly from secure session token
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError || !user || !user.email) {
+          setLoading(false);
+          return;
+        }
+
+        // 2. Fetch matched transactional ledgers from database
+        await fetchInvoices(user.email);
+      } catch (err) {
+        console.error("BILLING_INITIALIZATION_EXCEPTION:", err);
+        setLoading(false);
       }
-    } catch (e) {
-      console.error(e);
-      setLoading(false);
     }
+
+    initializeBillingContext();
   }, []);
 
   async function fetchInvoices(email: string) {
-    const { data, error } = await supabase
-      .from("client_invoices")
-      .select("*")
-      .eq("client_email", email)
-      .order("issued_at", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("client_invoices")
+        .select("*")
+        .eq("client_email", email)
+        .order("issued_at", { ascending: false });
 
-    if (!error && data) {
-      setInvoices(data);
-      if (data.length > 0) setSelectedInvoice(data[0]);
+      if (error) {
+        console.error("DATABASE_INVOICE_FETCH_ERR:", error.message);
+      } else if (data) {
+        setInvoices(data);
+        if (data.length > 0) setSelectedInvoice(data[0]);
+      }
+    } catch (dbErr) {
+      console.error("LEDGER_QUERY_EXCEPTION:", dbErr);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   return (
@@ -129,7 +141,6 @@ export default function CorporateBillingPage(): React.JSX.Element {
                 {/* Invoice Meta Grid Header Block */}
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 pb-6 border-b border-zinc-100">
                   <div className="space-y-1.5">
-                    {/* Simplified Corporate Icon/Logo Component Block */}
                     <div className="w-8 h-8 rounded-lg bg-zinc-950 text-white flex items-center justify-center font-mono font-black text-xs mb-2">
                       Ω
                     </div>

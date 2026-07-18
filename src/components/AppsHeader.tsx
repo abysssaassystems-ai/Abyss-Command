@@ -1,72 +1,46 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { LogOut, User, ShieldCheck } from "lucide-react";
 
 export default function AppsHeader(): React.JSX.Element {
-  const router = useRouter();
   const [accountName, setAccountName] = useState<string>("Client Engine");
   const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (!session) {
-      setTenantEmail("unauthenticated_session");
-      return;
-    }
-
-    try {
-      const parsedSession = JSON.parse(session);
-      const targetEmail = parsedSession?.email || "";
-      setTenantEmail(targetEmail || "anonymous_isolated");
-
-      // Live-sync query validating the database tenant context matching the record
-      async function syncHeaderProfile() {
-        if (!targetEmail) {
-          if (parsedSession?.account_name) {
-            setAccountName(parsedSession.account_name);
-          }
-          return;
-        }
-
-        try {
-          const { data, error } = await supabase
-            .from("apps_and_software_clients")
-            .select("account_name")
-            .eq("email", targetEmail)
-            .maybeSingle();
-
-          if (!error && data?.account_name) {
-            setAccountName(data.account_name);
-          } else if (parsedSession.account_name) {
-            setAccountName(parsedSession.account_name);
-          }
-        } catch (dbError) {
-          console.error("HEADER_DB_SYNC_EXCEPTION:", dbError);
-          if (parsedSession.account_name) {
-            setAccountName(parsedSession.account_name);
-          }
-        }
+    async function syncHeaderProfile() {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (error || !user) {
+        setTenantEmail("unauthenticated_session");
+        setAccountName("Client Engine");
+        return;
       }
 
-      syncHeaderProfile();
-    } catch (err) {
-      console.error("HEADER_AUTH_PARSE_EXCEPTION:", err);
-      setTenantEmail("fault_containment_mode");
+      setTenantEmail(user.email || "anonymous_isolated");
+
+      // Extract details synchronously from token metadata to skip flaky DB lookups
+      if (user.user_metadata?.account_name) {
+        setAccountName(user.user_metadata.account_name);
+      } else if (user.user_metadata?.display_name) {
+        setAccountName(user.user_metadata.display_name);
+      } else {
+        setAccountName("Client Workspace");
+      }
     }
+
+    syncHeaderProfile();
   }, []);
 
-  const handleSessionLogout = () => {
-    localStorage.removeItem("active_software_user");
-    router.push("/login");
+  const handleSessionLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
   };
 
   return (
     <header className="h-20 bg-white border-b border-zinc-200 px-6 md:px-8 flex items-center justify-between select-none z-40 text-left">
       
-      {/* Session User Profile Greeting */}
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-center text-zinc-600 shrink-0">
           <User className="w-4 h-4 stroke-[2.5]" />
@@ -81,9 +55,7 @@ export default function AppsHeader(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Right Control Actions Panel Block */}
       <div className="flex items-center gap-4">
-        {/* Real-time Inline Tenant Identity Badge */}
         <div className="hidden lg:flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-xl px-3 h-11 text-left">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />
           <div className="min-w-[120px] max-w-[200px]">
@@ -96,7 +68,6 @@ export default function AppsHeader(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Terminal Exit Action Interface */}
         <button
           type="button"
           onClick={handleSessionLogout}
