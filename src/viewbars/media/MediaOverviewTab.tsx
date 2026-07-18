@@ -1,12 +1,28 @@
-'use client';
+"use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, Edit2, Grid, Award, List } from 'lucide-react';
 
-export default function MediaOverviewTab() {
-  // Mock data matching your exact TV Time profile screenshot metrics
+export default function MediaOverviewTab(): React.JSX.Element {
+  const [profileName, setProfileName] = useState<string>("Authorized Client");
+
+  // Load the authenticated tenant context dynamically from the session layer
+  useEffect(() => {
+    const session = localStorage.getItem("active_software_user");
+    if (session) {
+      try {
+        const parsed = JSON.parse(session);
+        if (parsed?.account_name) {
+          setProfileName(parsed.account_name);
+        }
+      } catch (err) {
+        console.error("OVERVIEW_SESSION_PARSE_ERROR:", err);
+      }
+    }
+  }, []);
+
+  // Structural metadata definitions aligned with your tracking records
   const stats = {
-    username: 'Anonymous',
     following: 0,
     followers: 0,
     comments: 0,
@@ -29,128 +45,137 @@ export default function MediaOverviewTab() {
   ];
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-8 pb-12 animate-fade-in">
+    <div className="w-full max-w-5xl mx-auto space-y-8 pb-12 animate-fadeIn text-gray-800 select-none">
       
-      {/* 1. HERO PROFILE BANNER */}
-      <div className="relative rounded-2xl overflow-hidden bg-zinc-950 border border-zinc-800 h-48 flex items-end p-6">
-        {/* Deep background glow matching the dark Iron Throne graphic mood */}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent z-10" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent" />
+      {/* 1. HERO PROFILE BANNER CONTAINER */}
+      <div className="relative rounded-2xl overflow-hidden bg-gray-50 border border-gray-200 h-44 flex items-end p-6 shadow-sm">
+        {/* Subtle corporate background glow parameters */}
+        <div className="absolute inset-0 bg-gradient-to-t from-white via-white/40 to-transparent z-10" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-purple-50 via-transparent to-transparent" />
         
         <div className="relative z-20 flex items-center gap-4 w-full">
-          <div className="w-20 h-20 rounded-full border-2 border-zinc-700 bg-zinc-800 overflow-hidden flex items-center justify-center text-xl font-bold text-zinc-400">
-            ?
+          {/* Avatar frame holding letter signatures */}
+          <div className="w-16 h-16 rounded-full border-2 border-white bg-gradient-to-br from-purple-600 to-blue-600 overflow-hidden flex items-center justify-center text-lg font-black text-white shadow-sm">
+            {profileName.charAt(0).toUpperCase()}
           </div>
           <div className="flex-1">
-            <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
-              {stats.username}
-              <button className="p-1 rounded hover:bg-zinc-900 transition-colors">
-                <Edit2 className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
+            <h2 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-2">
+              {profileName}
+              <button type="button" className="p-1 rounded hover:bg-gray-100 transition-colors">
+                <Edit2 className="w-3.5 h-3.5 text-gray-400 hover:text-purple-600" />
               </button>
             </h2>
-            <span className="text-xs font-semibold uppercase tracking-wider text-amber-500 px-2 py-0.5 bg-amber-500/10 rounded-md border border-amber-500/20 mt-1 inline-block">
-              Edit Profile
+            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 px-2.5 py-0.5 bg-purple-50 rounded-md border border-purple-100 mt-1 inline-block">
+              Ecosystem Profile Active
             </span>
           </div>
         </div>
       </div>
 
-      {/* 2. SOCIAL ENGAGEMENT COUNTERS */}
-      <div className="grid grid-cols-3 gap-4 border-y border-zinc-800/60 py-4 text-center">
+      {/* 2. SOCIAL ENGAGEMENT COUNTERS MATRIX */}
+      <div className="grid grid-cols-3 gap-4 border-y border-gray-200 py-5 text-center bg-gray-50/30 rounded-xl px-2">
         <div>
-          <div className="text-lg font-extrabold text-zinc-100">{stats.following}</div>
-          <div className="text-xs text-zinc-500 font-medium uppercase tracking-wider mt-0.5">following</div>
+          <div className="text-xl font-mono font-black text-gray-900">{stats.following}</div>
+          <div className="text-[10px] text-gray-400 font-mono font-bold uppercase tracking-wider mt-0.5">Following</div>
         </div>
-        <div className="border-x border-zinc-800/60">
-          <div className="text-lg font-extrabold text-zinc-100">{stats.followers}</div>
-          <div className="text-xs text-zinc-500 font-medium uppercase tracking-wider mt-0.5">followers</div>
+        <div className="border-x border-gray-200">
+          <div className="text-xl font-mono font-black text-gray-900">{stats.followers}</div>
+          <div className="text-[10px] text-gray-400 font-mono font-bold uppercase tracking-wider mt-0.5">Followers</div>
         </div>
         <div>
-          <div className="text-lg font-extrabold text-zinc-100">{stats.comments}</div>
-          <div className="text-xs text-zinc-500 font-medium uppercase tracking-wider mt-0.5">comments</div>
+          <div className="text-xl font-mono font-black text-gray-900">{stats.comments}</div>
+          <div className="text-[10px] text-gray-400 font-mono font-bold uppercase tracking-wider mt-0.5">Comments Matrix</div>
         </div>
       </div>
 
       {/* 3. CORE ANALYTICS BLOCK */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
-            <Award className="w-4 h-4 text-amber-500" /> Stats
+      <div className="space-y-4">
+        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+          <h3 className="text-xs font-mono font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
+            <Award className="w-4 h-4 text-purple-600" /> Aggregated System Metrics
           </h3>
-          <ChevronRight className="w-4 h-4 text-zinc-600" />
+          <ChevronRight className="w-4 h-4 text-gray-300" />
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Odometer Card 1: TV Time accumulator */}
-          <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
-            <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-              <Grid className="w-3.5 h-3.5" /> TV Time
-            </span>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-2xl font-black text-zinc-100">{stats.tvTime.months}</div>
-                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide mt-1">Months</div>
-              </div>
-              <div>
-                <div className="text-2xl font-black text-zinc-100">{stats.tvTime.days}</div>
-                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide mt-1">Days</div>
-              </div>
-              <div>
-                <div className="text-2xl font-black text-zinc-100">{stats.tvTime.hours}</div>
-                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide mt-1">Hours</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Odometer Card 1: Time Accumulator */}
+          <div className="p-[1px] bg-gradient-to-br from-purple-600 via-blue-500 to-gray-200 rounded-2xl shadow-sm">
+            <div className="bg-white rounded-[15px] p-5 flex flex-col justify-between h-full min-h-[120px]">
+              <span className="text-[10px] font-mono font-black text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Grid className="w-3.5 h-3.5 text-purple-600" /> Total Duration Index
+              </span>
+              <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                <div>
+                  <div className="text-2xl font-black text-gray-900 tracking-tight">{stats.tvTime.months}</div>
+                  <div className="text-[9px] font-sans font-bold text-gray-400 uppercase mt-0.5">Months</div>
+                </div>
+                <div className="border-x border-gray-100">
+                  <div className="text-2xl font-black text-gray-900 tracking-tight">{stats.tvTime.days}</div>
+                  <div className="text-[9px] font-sans font-bold text-gray-400 uppercase mt-0.5">Days</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-black text-gray-900 tracking-tight">{stats.tvTime.hours}</div>
+                  <div className="text-[9px] font-sans font-bold text-gray-400 uppercase mt-0.5">Hours</div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Odometer Card 2: Cumulative total episodes */}
-          <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
-            <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-              <Grid className="w-3.5 h-3.5" /> Episodes Watched
-            </span>
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-4xl font-black text-zinc-100 tracking-tight">
-                {stats.episodesWatched}
+          {/* Odometer Card 2: Cumulative Checkpoint Totals */}
+          <div className="p-[1px] bg-gradient-to-br from-purple-600 via-blue-500 to-gray-200 rounded-2xl shadow-sm">
+            <div className="bg-white rounded-[15px] p-5 flex flex-col justify-between h-full min-h-[120px]">
+              <span className="text-[10px] font-mono font-black text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Grid className="w-3.5 h-3.5 text-blue-500" /> Checkpoints Validated
+              </span>
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-3xl font-mono font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-blue-600 tracking-tight">
+                  {stats.episodesWatched} <span className="text-xs font-sans font-bold text-gray-400 uppercase tracking-normal">units</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 4. USER LIST SHELF */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
-            <List className="w-4 h-4 text-amber-500" /> Lists
+      {/* 4. USER CUSTOM SHELVES LAYOUT */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+          <h3 className="text-xs font-mono font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
+            <List className="w-4 h-4 text-purple-600" /> Private Collection Arrays
           </h3>
-          <ChevronRight className="w-4 h-4 text-zinc-600" />
+          <ChevronRight className="w-4 h-4 text-gray-300" />
         </div>
+        
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {topLists.map((list) => (
-            <div key={list.id} className="group relative rounded-xl overflow-hidden border border-zinc-800 h-36 bg-zinc-950 cursor-pointer">
-              <img src={list.image} alt={list.title} className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:scale-105 transition-transform duration-300" />
-              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent" />
-              <div className="absolute bottom-4 left-4 right-4 z-10">
-                <h4 className="font-bold text-zinc-100 text-sm drop-shadow-sm">{list.title}</h4>
+            <div key={list.id} className="group relative rounded-xl overflow-hidden border border-gray-200 h-36 bg-gray-50 cursor-pointer shadow-sm">
+              <img src={list.image} alt={list.title} className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:scale-102 transition-transform duration-300 group-hover:opacity-25" />
+              <div className="absolute inset-0 bg-gradient-to-t from-white via-white/20 to-transparent z-10" />
+              <div className="absolute bottom-4 left-4 right-4 z-20">
+                <h4 className="font-black text-gray-900 text-sm drop-shadow-sm group-hover:text-purple-600 transition-colors">{list.title}</h4>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* 5. CONTINUOUS SHOWS WATCHING GRID */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
-            <Grid className="w-4 h-4 text-amber-500" /> Active Shows
+      {/* 5. CONTINUOUS RUNTIME SYSTEM HOOKS DISPLAY */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+          <h3 className="text-xs font-mono font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
+            <Grid className="w-4 h-4 text-blue-500" /> Active Registry Monitors
           </h3>
-          <ChevronRight className="w-4 h-4 text-zinc-600" />
+          <ChevronRight className="w-4 h-4 text-gray-300" />
         </div>
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+        
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4">
           {recentShows.map((show) => (
-            <div key={show.id} className="aspect-[2/3] rounded-lg overflow-hidden border border-zinc-800 bg-zinc-950 relative group cursor-pointer">
-              <img src={show.image} alt={show.name} className="w-full h-full object-cover group-hover:opacity-80 transition-opacity" />
-              <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/90 to-transparent pt-6 opacity-0 group-hover:opacity-100 transition-opacity">
-                <p className="text-[11px] font-bold truncate text-zinc-200">{show.name}</p>
+            <div key={show.id} className="p-[1px] bg-gray-200 hover:bg-gradient-to-br hover:from-purple-600 hover:to-blue-500 rounded-xl transition-all duration-300 shadow-sm group cursor-pointer aspect-[2/3] relative overflow-hidden">
+              <div className="w-full h-full rounded-[11px] overflow-hidden bg-white relative flex flex-col justify-end">
+                <img src={show.image} alt={show.name} className="absolute inset-0 w-full h-full object-cover group-hover:opacity-20 transition-opacity" />
+                <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-white to-transparent pt-8 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                  <p className="text-[10px] font-black tracking-tight text-gray-900 truncate">{show.name}</p>
+                </div>
               </div>
             </div>
           ))}

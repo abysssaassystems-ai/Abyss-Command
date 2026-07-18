@@ -1,7 +1,18 @@
 "use client";
 
-import React from "react";
-import { TabID } from "./types";
+import React, { useState, useEffect } from "react";
+import { 
+  LayoutDashboard, 
+  Apple, 
+  Database, 
+  Target, 
+  Dumbbell, 
+  TrendingUp, 
+  Pill,
+  ArrowLeft,
+  ShieldCheck
+} from "lucide-react";
+import { TabID } from "@/app/dashboard/my-apps/health/types";
 
 interface HealthSidebarProps {
   activeTab: TabID;
@@ -11,50 +22,73 @@ interface HealthSidebarProps {
 interface SidebarNavItem {
   id: TabID;
   label: string;
-  icon: string;
+  icon: React.ComponentType<{ className?: string }>;
 }
 
 const NAVIGATION_ITEMS: SidebarNavItem[] = [
-  { id: "overview", label: "Hub Overview", icon: "📊" },
-  { id: "nutrition", label: "Nutrition & Logs", icon: "🥗" },
-  { id: "meals", label: "Meals Database", icon: "🍳" },
-  { id: "goals", label: "Biometric Goals", icon: "🎯" },
-  { id: "workouts", label: "Workout Core", icon: "⚡" },
-  { id: "trends", label: "Analytics & Trends", icon: "📈" },
-  { id: "supplements", label: "Supplements Stack", icon: "💊" },
+  { id: "overview", label: "Hub Overview", icon: LayoutDashboard },
+  { id: "nutrition", label: "Nutrition & Logs", icon: Apple },
+  { id: "meals", label: "Meals Database", icon: Database },
+  { id: "goals", label: "Biometric Goals", icon: Target },
+  { id: "workouts", label: "Workout Core", icon: Dumbbell },
+  { id: "trends", label: "Analytics & Trends", icon: TrendingUp },
+  { id: "supplements", label: "Supplements Stack", icon: Pill },
 ];
 
-export default function HealthSidebar({ activeTab, setActiveTab }: HealthSidebarProps) {
+export default function HealthSidebar({ activeTab, setActiveTab }: HealthSidebarProps): React.JSX.Element {
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
+
+  useEffect(() => {
+    const session = localStorage.getItem("active_software_user");
+    if (session) {
+      try {
+        const parsed = JSON.parse(session);
+        if (parsed?.email) {
+          setTenantEmail(parsed.email);
+        } else {
+          setTenantEmail("anonymous_isolated");
+        }
+      } catch (err) {
+        console.error("SIDEBAR_AUTH_PARSE_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    } else {
+      setTenantEmail("unauthenticated_session");
+    }
+  }, []);
+
   return (
-    <aside className="w-64 bg-[#121824] border-r border-gray-800 flex flex-col justify-between hidden md:flex shrink-0 min-h-screen">
+    <aside className="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col justify-between shrink-0 min-h-screen select-none">
       <div className="p-6">
-        {/* Core Subsystem branding */}
-        <div className="mb-8">
-          <p className="text-[10px] uppercase tracking-[0.25em] text-[#00F2FE] font-bold mb-2">
-            // SUBSYSTEM
-          </p>
-          <h2 className="text-xl font-black italic uppercase tracking-tight text-white">
-            BIO-<span className="text-[#00B8C4]">ENGINE</span>
+        {/* Core Subsystem Branding Panel */}
+        <div className="mb-8 text-left">
+          <span className="text-[9px] font-mono font-black tracking-widest text-purple-600 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded uppercase">
+            Subsystem Core
+          </span>
+          <h2 className="text-xl font-black tracking-tight text-gray-900 mt-2.5">
+            BIO-<span className="text-purple-600 font-mono">ENGINE</span>
           </h2>
         </div>
 
-        {/* Dynamic Nav link generation */}
-        <nav className="space-y-1.5">
+        {/* Dynamic Nav Link Generation Vector */}
+        <nav className="space-y-1">
           {NAVIGATION_ITEMS.map((item) => {
             const isActive = activeTab === item.id;
+            const IconComponent = item.icon;
+            
             return (
               <button
                 key={item.id}
+                type="button"
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs uppercase tracking-wider font-bold transition-all duration-200 ${
+                className={`w-full h-11 flex items-center gap-3 px-4 rounded-xl text-xs font-mono font-black uppercase tracking-wider transition-all cursor-pointer border ${
                   isActive
-                    ? "bg-[#0B0F17] text-[#00F2FE] border border-gray-800 shadow-[0_0_15px_rgba(0,242,254,0.04)]"
-                    : "text-gray-400 hover:text-white hover:bg-[#0B0F17]/40 border border-transparent"
+                    ? "bg-purple-50 text-purple-700 border-purple-100/70 shadow-2xs"
+                    : "text-gray-400 hover:text-gray-900 hover:bg-gray-50 border-transparent"
                 }`}
               >
-                <span className={`text-sm ${isActive ? "scale-110 text-[#00F2FE]" : "opacity-70"}`}>
-                  {item.icon}
-                </span>
+                <IconComponent className={`w-4 h-4 shrink-0 transition-transform ${isActive ? "scale-110 stroke-[2.5]" : "opacity-70 stroke-[2]"}`} />
                 <span className="tracking-wide">{item.label}</span>
               </button>
             );
@@ -62,11 +96,25 @@ export default function HealthSidebar({ activeTab, setActiveTab }: HealthSidebar
         </nav>
       </div>
 
-      {/* Global Network Escape Hatch */}
-      <div className="p-4 border-t border-gray-800/60">
+      {/* Security Checkpoint and Account Isolation Footer */}
+      <div className="p-4 border-t border-gray-100 space-y-3 bg-gray-50/50">
+        {/* Isolated Session Environment Card */}
+        <div className="bg-white border border-gray-200 rounded-xl p-2.5 flex items-center gap-2 shadow-2xs text-left">
+          <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[8px] font-mono font-black text-gray-400 uppercase tracking-wider leading-none">
+              Isolated Workspace
+            </p>
+            <p className="text-[10px] font-sans font-semibold text-gray-700 truncate mt-0.5" title={tenantEmail}>
+              {tenantEmail}
+            </p>
+          </div>
+        </div>
+
+        {/* Global Network Escape Hatch */}
         <a 
           href="/dashboard" 
-          className="w-full block text-center text-[10px] uppercase tracking-widest font-bold border border-gray-800 bg-[#0B0F17] hover:border-[#00F2FE] text-gray-400 hover:text-[#00F2FE] py-2.5 rounded-xl transition duration-300"
+          className="w-full h-10 flex items-center justify-center text-[10px] font-mono font-black uppercase tracking-widest border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-gray-500 hover:text-gray-900 rounded-xl transition-all shadow-2xs"
         >
           ← Return to Network
         </a>

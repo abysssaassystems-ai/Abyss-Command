@@ -1,6 +1,23 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { 
+  PieChart, 
+  RefreshCw, 
+  Plus, 
+  X, 
+  Sparkles, 
+  Layers, 
+  TrendingUp, 
+  Calendar, 
+  ArrowDownRight, 
+  ArrowDownLeft,
+  ArrowUpRight, 
+  SlidersHorizontal,
+  FolderPlus,
+  Loader2,
+  DollarSign
+} from "lucide-react";
 
 interface BudgetNode {
   id: string;
@@ -17,10 +34,9 @@ interface StagedCategoryNode {
   keywords: string;
 }
 
-export default function MonthlyBudgetTab() {
-  const devUserId = "mock-dev-user-uuid-123";
-
-  // --- STATE REGISTRIES ---
+export default function MonthlyBudgetTab(): React.JSX.Element {
+  // --- MULTI-TENANT SESSION HANDSHAKE ---
+  const [userEmail, setUserEmail] = useState<string>("");
   const [categories, setCategories] = useState<BudgetNode[]>([]);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [showAddForm, setShowAddForm] = useState<boolean>(false);
@@ -53,6 +69,21 @@ export default function MonthlyBudgetTab() {
   const [stageType, setStageType] = useState<"basic" | "category">("category");
   const [stageKeywords, setStageKeywords] = useState<string>("");
 
+  // Hydrate tenant email from browser storage space securely
+  useEffect(() => {
+    const session = localStorage.getItem("active_software_user");
+    if (session) {
+      try {
+        const parsed = JSON.parse(session);
+        if (parsed?.email) {
+          setUserEmail(parsed.email);
+        }
+      } catch (err) {
+        console.error("BUDGET_AUTH_HYDRATION_EXCEPTION:", err);
+      }
+    }
+  }, []);
+
   // --- TEMPORAL CHRON METRIC CALCULATORS ---
   const currentMonthName = new Date().toLocaleString("en-US", { month: "long", year: "numeric" });
   
@@ -65,30 +96,33 @@ export default function MonthlyBudgetTab() {
   };
   const { remainingDaysInMonth, remainingDaysInWeek } = getDaysMetadata();
 
-  // --- DATA INGESTION HANDSHAKES ---
+  // --- SECURE CLOUD NETWORK DATA INGESTION ---
   const fetchLiveAggregatedBudget = useCallback(async () => {
+    if (!userEmail) return;
     setIsSyncing(true);
     try {
-      const res = await fetch(`/api/budget?user_id=${devUserId}`);
+      const res = await fetch(`/api/budget?user_id=${encodeURIComponent(userEmail)}`);
       if (res.ok) {
         const data = await res.json();
         setCategories(data.categories || []);
       }
     } catch (err) {
-      console.error("Failed to query budget data synchronization arrays:", err);
+      console.error("Failed to query multi-tenant budget ledger allocation pools:", err);
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [userEmail]);
 
   useEffect(() => {
-    fetchLiveAggregatedBudget();
-  }, [fetchLiveAggregatedBudget]);
+    if (userEmail) {
+      fetchLiveAggregatedBudget();
+    }
+  }, [userEmail, fetchLiveAggregatedBudget]);
 
-  // Add individual row into local state container
+  // Add individual custom bucket framework parameters directly linked with the signature
   const handleCreateBudgetEnvelope = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCatName || !newCatLimit) return;
+    if (!newCatName || !newCatLimit || !userEmail) return;
 
     const kwArray = newCatKeywords.split(",").map(k => k.trim()).filter(k => k.length > 0);
     if (kwArray.length === 0) kwArray.push(newCatName.split(" ")[0].toLowerCase());
@@ -98,7 +132,7 @@ export default function MonthlyBudgetTab() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: devUserId,
+          user_id: userEmail, // Strict multi-tenant row boundary key injection
           name: newCatName,
           budget_limit: parseFloat(newCatLimit) || 0,
           group_type: newCatType,
@@ -114,7 +148,7 @@ export default function MonthlyBudgetTab() {
         fetchLiveAggregatedBudget();
       }
     } catch (err) {
-      console.error("Failed to register category item payload:", err);
+      console.error("Failed to transmit category allocation context data:", err);
     }
   };
 
@@ -139,14 +173,13 @@ export default function MonthlyBudgetTab() {
     setStagedCategories((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  // Submits the complete custom structured macro-budget framework to database api targets
+  // Deployment framework mapping the collection of configured rules securely inside rows
   const handleGenerateFreshBudgetStructure = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (stagedCategories.length === 0 || !newBudgetTitle) return;
+    if (stagedCategories.length === 0 || !newBudgetTitle || !userEmail) return;
     setIsSyncing(true);
 
     try {
-      // Loop over your dynamic custom matrix built inside the wizard overlay modal
       for (const item of stagedCategories) {
         const kwArray = item.keywords.split(",").map(k => k.trim()).filter(k => k.length > 0);
         if (kwArray.length === 0) kwArray.push(item.name.split(" ")[0].toLowerCase());
@@ -155,7 +188,7 @@ export default function MonthlyBudgetTab() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            user_id: devUserId,
+            user_id: userEmail, // Absolute row level verification key tracking enforcement
             name: item.name,
             budget_limit: item.limit,
             group_type: item.type,
@@ -168,7 +201,7 @@ export default function MonthlyBudgetTab() {
       setShowBudgetModal(false);
       fetchLiveAggregatedBudget();
     } catch (err) {
-      console.error("Failed to deploy wizard template metrics:", err);
+      console.error("Failed to execute budget wizard template script generation:", err);
     } finally {
       setIsSyncing(false);
     }
@@ -215,149 +248,180 @@ export default function MonthlyBudgetTab() {
     : circumference;
 
   return (
-    <div className="space-y-6 animate-fadeIn max-w-[1300px] mx-auto p-2 relative">
+    <div className="space-y-6 animate-fadeIn max-w-[1300px] mx-auto p-2 relative text-gray-800 select-none">
       
       {/* 1. TOP GLOBAL CONTROL PANEL SECTION */}
-      <div className="border-b border-slate-100 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 select-none">
+      <div className="border-b border-gray-200 pb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <span className="text-[10px] bg-blue-50 text-blue-600 font-extrabold px-2.5 py-1 rounded-md tracking-wider uppercase font-mono">
-            {timeframe} Analytics Mode
+          <span className="text-[10px] bg-purple-50 border border-purple-100 text-purple-600 font-mono font-black px-2.5 py-1 rounded-md tracking-wider uppercase">
+            {timeframe} Execution View
           </span>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight mt-1.5">{currentMonthName} Console</h2>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tight mt-2 flex items-center gap-2">
+            <SlidersHorizontal className="w-5 h-5 text-purple-600" /> {currentMonthName} Control Matrix
+          </h2>
         </div>
         
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <button
             type="button"
             onClick={() => setShowBudgetModal(true)}
-            className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-10 px-4 rounded-xl transition-all shadow-sm active:scale-98"
+            className="flex-1 sm:flex-none bg-gradient-to-r from-purple-600 to-blue-600 text-white font-mono font-black text-xs h-10 px-4 rounded-xl shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            ✴️ Create New Budget
+            <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" /> Budget Framework Wizard
           </button>
+          
           <button
             type="button"
             onClick={fetchLiveAggregatedBudget}
             disabled={isSyncing}
-            className="flex-1 sm:flex-none border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs h-10 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
+            className="flex-1 sm:flex-none border border-gray-200 bg-white text-gray-700 font-mono font-black text-xs h-10 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-sm hover:border-gray-300 transition-all cursor-pointer disabled:opacity-50"
           >
-            <span className={isSyncing ? "animate-spin block" : ""}>🔄</span>
-            <span>Sync Live Ledgers</span>
+            {isSyncing ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5 text-purple-600" />
+            )}
+            <span>Sync Live Envelopes</span>
           </button>
+
           <button
             type="button"
             onClick={() => setShowAddForm(!showAddForm)}
-            className="flex-1 sm:flex-none bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs h-10 px-4 rounded-xl transition-all shadow-sm active:scale-98"
+            className="flex-1 sm:flex-none bg-gray-900 text-white font-mono font-black text-xs h-10 px-4 rounded-xl shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            {showAddForm ? "Close Drawer" : "＋ New Category Rule"}
+            {showAddForm ? <X className="w-3.5 h-3.5 text-rose-400" /> : <Plus className="w-3.5 h-3.5 text-blue-400" />}
+            <span>{showAddForm ? "Dismiss Drawer" : "New Track Rule"}</span>
           </button>
         </div>
       </div>
 
-      {/* 2. TIMEFRAME SWITCHER BAR */}
-      <div className="bg-slate-100 p-1 rounded-xl flex gap-1 max-w-md select-none border border-slate-200/40">
+      {/* 2. TIMEFRAME SWITCHER TAB SELECTOR BAR */}
+      <div className="bg-gray-100 p-1 rounded-xl flex gap-1 max-w-md border border-gray-200/50 shadow-inner">
         {(["monthly", "weekly", "daily"] as const).map((view) => (
           <button
             key={view}
             type="button"
             onClick={() => setTimeframe(view)}
-            className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
-              timeframe === view ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+              timeframe === view 
+                ? "bg-white text-purple-600 border border-gray-100 shadow-sm" 
+                : "text-gray-400 hover:text-gray-700"
             }`}
           >
-            {view} View
+            {view} Parameters
           </button>
         ))}
       </div>
 
-      {/* 3. DUAL COLUMN WORKSPACE GRID */}
+      {/* 3. DUAL COLUMN DESIGN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
           
           {showAddForm && (
-            <form onSubmit={handleCreateBudgetEnvelope} className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 text-left animate-slideDown">
-              <span className="text-xs font-black uppercase text-slate-800 tracking-wider block">Provision Dynamic Tracking Rule</span>
+            <form onSubmit={handleCreateBudgetEnvelope} className="bg-gray-50 border border-gray-200 rounded-2xl p-5 space-y-4 text-left animate-slideDown shadow-inner">
+              <span className="text-[10px] font-mono font-black uppercase text-purple-600 tracking-wider block">
+                Provision Dynamic Verification Pipeline Node
+              </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input
                   type="text"
                   required
-                  placeholder="Category Name (e.g., Target Run, Gas)..."
+                  placeholder="Envelope Name (e.g., Target Run, Fuel)..."
                   value={newCatName}
                   onChange={(e) => setNewCatName(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-xl px-4 h-11 text-xs font-bold text-slate-800 outline-none focus:border-blue-500 transition-all"
+                  className="bg-white border border-gray-200 rounded-xl px-4 h-11 text-xs font-bold text-gray-800 outline-none focus:border-purple-500 transition-all"
                 />
                 <input
                   type="number"
                   required
-                  placeholder="Monthly Base Cap Allocation Limit ($)..."
+                  placeholder="Monthly Base Cap Limit Allocation ($)..."
                   value={newCatLimit}
                   onChange={(e) => setNewCatLimit(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-xl px-4 h-11 text-xs font-bold text-slate-800 outline-none focus:border-blue-500 transition-all"
+                  className="bg-white border border-gray-200 rounded-xl px-4 h-11 text-xs font-bold text-gray-800 outline-none focus:border-purple-500 font-mono"
                 />
-                <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 h-11 justify-between text-xs font-bold text-slate-500">
-                  <span>Structural Target Bucket:</span>
+                <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 h-11 justify-between text-xs font-bold text-gray-400">
+                  <span className="font-mono text-[10px] uppercase">Target Framework Pool:</span>
                   <select 
                     value={newCatType} 
                     onChange={(e) => setNewCatType(e.target.value as any)}
-                    className="outline-none bg-transparent font-bold text-slate-900 cursor-pointer"
+                    className="outline-none bg-transparent font-black text-gray-900 cursor-pointer"
                   >
-                    <option value="category">Budget Category Container</option>
-                    <option value="basic">Budget Basics Block</option>
+                    <option value="category">Discretionary Envelope</option>
+                    <option value="basic">Fixed Baseline Resource</option>
                   </select>
                 </div>
                 <input
                   type="text"
-                  placeholder="Sync Search Keywords (e.g., walmart, shell)..."
+                  placeholder="Plaid Sync Match Keywords (comma separated)..."
                   value={newCatKeywords}
                   onChange={(e) => setNewCatKeywords(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-xl px-4 h-11 text-xs font-bold text-slate-800 outline-none focus:border-blue-500 transition-all"
+                  className="bg-white border border-gray-200 rounded-xl px-4 h-11 text-xs font-bold text-gray-800 outline-none focus:border-purple-500"
                 />
               </div>
-              <button type="submit" className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs h-11 rounded-xl uppercase tracking-wider transition-all shadow-sm">
+              <button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-mono font-black text-xs h-11 rounded-xl uppercase tracking-wider shadow-sm hover:opacity-95 cursor-pointer">
                 Deploy Tracking Envelope Configuration
               </button>
             </form>
           )}
 
-          {/* BASICS */}
-          <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5 space-y-4">
-            <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest select-none">Fixed Foundations Summary</h4>
-            <div className="border border-slate-100 rounded-xl overflow-hidden divide-y divide-slate-100">
-              <div className="bg-slate-50/50 px-4 py-2.5 flex justify-between text-[10px] font-black uppercase tracking-wider text-slate-400 font-mono">
-                <span>Name Matrix</span>
+          {/* FIXED FOUNDATIONS BASELINE ACCUMULATION PANELS */}
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 space-y-4">
+            <h4 className="text-[10px] font-mono font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-purple-600" /> FIXED ASSET STRUCTURE FOUNDATION
+            </h4>
+            <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100">
+              <div className="bg-gray-50/70 px-4 py-2.5 flex justify-between text-[9px] font-mono font-black uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                <span>Account Ledger Nodes</span>
                 <div className="flex gap-16 pr-4">
-                  <span>Cap Target</span>
+                  <span>Cap Metric</span>
                   <span>Actual Core</span>
                 </div>
               </div>
-              {basicItems.map((item) => (
-                <div key={item.id} className="p-4 flex justify-between items-center text-xs font-bold text-slate-800 hover:bg-slate-50/40 transition-colors">
-                  <span className="underline decoration-slate-200 underline-offset-4 decoration-2 hover:text-blue-500 cursor-pointer transition-colors">{item.name}</span>
-                  <div className="flex gap-14 font-mono font-bold tracking-tight text-right tabular-nums">
-                    <span className="text-slate-500">${item.limit.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                    <span className={item.spent > 0 ? "text-emerald-500" : "text-slate-400"}>${item.spent.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              {basicItems.length === 0 ? (
+                <div className="p-8 text-center text-xs font-mono font-bold text-gray-400 uppercase tracking-wide">No structural entries linked</div>
+              ) : basicItems.map((item) => (
+                <div key={item.id} className="p-4 flex justify-between items-center text-xs font-black text-gray-900 hover:bg-gray-50/40 transition-colors group">
+                  <span className="underline decoration-gray-200 underline-offset-4 decoration-2 group-hover:text-purple-600 cursor-pointer transition-colors">
+                    {item.name}
+                  </span>
+                  <div className="flex gap-14 font-mono font-black tracking-tight text-right tabular-nums">
+                    <span className="text-gray-400">${item.limit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="text-emerald-600 flex items-center gap-0.5">
+                      <ArrowDownLeft className="w-3 h-3 text-emerald-500 shrink-0" />
+                      ${item.spent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* CATEGORIES */}
-          <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5 space-y-4">
-            <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest select-none font-sans">Flexible Envelopes Ledger</h4>
-            <div className="border border-slate-100 rounded-xl overflow-hidden divide-y divide-slate-100">
-              <div className="bg-slate-50/50 px-4 py-2.5 flex justify-between text-[10px] font-black uppercase tracking-wider text-slate-400 font-mono">
-                <span>Name Matrix</span>
+          {/* FLEXIBLE ENVELOPES REGISTRY LIST */}
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 space-y-4">
+            <h4 className="text-[10px] font-mono font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+              <FolderPlus className="w-3.5 h-3.5 text-blue-600" /> VARIABLE CAPITAL FLUID ENVELOPES
+            </h4>
+            <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100">
+              <div className="bg-gray-50/70 px-4 py-2.5 flex justify-between text-[9px] font-mono font-black uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                <span>Discretionary Matrix Envelopes</span>
                 <div className="flex gap-16 pr-4">
-                  <span>Cap Target</span>
-                  <span>Actual Core</span>
+                  <span>Target Bound</span>
+                  <span>Active Ledger</span>
                 </div>
               </div>
-              {coreCategoryItems.map((item) => (
-                <div key={item.id} className="p-4 flex justify-between items-center text-xs font-bold text-slate-800 hover:bg-slate-50/40 transition-colors">
-                  <span className="underline decoration-slate-200 underline-offset-4 decoration-2 hover:text-blue-500 cursor-pointer transition-colors">{item.name}</span>
-                  <div className="flex gap-14 font-mono font-bold tracking-tight text-right tabular-nums">
-                    <span className="text-slate-500">${item.limit.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                    <span className={item.spent > 0 ? "text-slate-800" : "text-slate-400"}>${item.spent.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              {coreCategoryItems.length === 0 ? (
+                <div className="p-8 text-center text-xs font-mono font-bold text-gray-400 uppercase tracking-wide">No fluid allocation targets monitored</div>
+              ) : coreCategoryItems.map((item) => (
+                <div key={item.id} className="p-4 flex justify-between items-center text-xs font-black text-gray-900 hover:bg-gray-50/40 transition-colors group">
+                  <span className="underline decoration-gray-200 underline-offset-4 decoration-2 group-hover:text-blue-600 cursor-pointer transition-colors">
+                    {item.name}
+                  </span>
+                  <div className="flex gap-14 font-mono font-black tracking-tight text-right tabular-nums">
+                    <span className="text-gray-400">${item.limit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="text-gray-900 flex items-center gap-0.5">
+                      <ArrowUpRight className="w-3 h-3 text-purple-400 shrink-0" />
+                      ${item.spent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
                 </div>
               ))}
@@ -365,41 +429,52 @@ export default function MonthlyBudgetTab() {
           </div>
         </div>
 
-        {/* METRICS SUMMARY SIDE PANEL */}
+        {/* METRICS DISK SUMMARY RIGHT SIDE PANEL */}
         <div className="space-y-6">
-          <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-md flex flex-col items-center relative overflow-hidden">
-            <span className="text-xs font-extrabold text-slate-400 uppercase tracking-widest block self-start mb-6 select-none">{timeframe} Metrics Engine</span>
+          <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm flex flex-col items-center relative overflow-hidden">
+            <span className="text-[10px] font-mono font-black text-gray-400 uppercase tracking-widest block self-start mb-6">
+              {timeframe} METRICS COMPUTATION ENGINE
+            </span>
             
-            <div className="relative w-44 h-44 flex items-center justify-center select-none">
+            <div className="relative w-44 h-44 flex items-center justify-center">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 200 200">
-                <circle cx="100" cy="100" r={radius} className="text-slate-100" strokeWidth="14" stroke="currentColor" fill="transparent" />
-                <circle cx="100" cy="100" r={radius} className="text-blue-500 transition-all duration-700 ease-in-out" strokeWidth="14" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" stroke="currentColor" fill="transparent" />
+                <circle cx="100" cy="100" r={radius} className="text-gray-100" strokeWidth="12" stroke="currentColor" fill="transparent" />
+                <circle cx="100" cy="100" r={radius} className="text-purple-600 transition-all duration-700 ease-in-out" strokeWidth="12" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" stroke="currentColor" fill="transparent" />
               </svg>
               <div className="absolute text-center flex flex-col justify-center items-center">
-                <span className="text-[10px] uppercase text-slate-400 font-extrabold tracking-wider">Available</span>
-                <span className="text-2xl font-black text-slate-900 tracking-tight mt-0.5 tabular-nums">
+                <span className="text-[9px] font-mono font-black uppercase text-gray-400 tracking-widest flex items-center gap-0.5">
+                  <PieChart className="w-3 h-3 text-purple-600" /> Liquid SAFE
+                </span>
+                <span className="text-2xl font-mono font-black text-gray-900 tracking-tight mt-1 tabular-nums">
                   ${remainingSpendingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
-                <span className="text-[9px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold mt-1 font-mono tabular-nums">allocation of ${spendingBudgetLimit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                <span className="text-[8px] bg-purple-50 text-purple-600 font-bold border border-purple-100 px-2 py-0.5 rounded-md mt-1.5 font-mono tabular-nums">
+                  OF ${spendingBudgetLimit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </span>
               </div>
             </div>
 
-            <p className="text-[11px] text-slate-500 font-bold text-center leading-relaxed mt-6 border-t border-slate-50 pt-4 w-full">
-              That's <span className="text-blue-600 font-black font-mono">${burnRateContext.rate.toFixed(2)} / operational unit</span> {burnRateContext.label}
-            </p>
+            {/* HIGH-CONTRAST CHRON BURN RATE VERDICT FRAME */}
+            <div className="w-full mt-6 p-[1px] bg-gradient-to-r from-purple-600 to-blue-500 rounded-xl shadow-xs">
+              <div className="bg-white p-3.5 rounded-[11px] text-center">
+                <p className="text-[11px] text-gray-500 leading-relaxed font-medium">
+                  Operational target velocity ceiling: <span className="text-purple-600 font-black font-mono block text-sm mt-0.5">${burnRateContext.rate.toFixed(2)} / Unit Interval</span> {burnRateContext.label}
+                </p>
+              </div>
+            </div>
 
-            <div className="w-full mt-6 space-y-3.5 border-t border-slate-100 pt-5 text-xs font-bold text-slate-600">
-              <div className="flex justify-between items-center select-none">
-                <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[7px] text-indigo-500">⊕</span><span>Target Parameter</span></div>
-                <span className="font-mono font-black text-slate-900 tabular-nums">${spendingBudgetLimit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            <div className="w-full mt-6 space-y-3 border-t border-gray-100 pt-5 text-xs font-black text-gray-500 font-mono uppercase tracking-wide">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400" /><span>Structural Limit</span></div>
+                <span className="text-gray-900 tabular-nums">${spendingBudgetLimit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
-              <div className="flex justify-between items-center select-none">
-                <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-blue-500/20 flex items-center justify-center text-[7px] text-blue-500">⊖</span><span>Active Expenditure</span></div>
-                <span className="font-mono font-black text-slate-900 tabular-nums">${currentSpendingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-500" /><span>Active Execution</span></div>
+                <span className="text-gray-900 tabular-nums">${currentSpendingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
-              <div className="flex justify-between items-center select-none border-t border-slate-50 pt-3.5">
-                <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500/20 flex items-center justify-center text-[7px] text-emerald-500">⊜</span><span>Remaining Safety Value</span></div>
-                <span className="font-mono font-black text-emerald-500 tabular-nums">${remainingSpendingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <div className="flex justify-between items-center border-t border-gray-100 pt-3 text-gray-900">
+                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /><span>Available Delta</span></div>
+                <span className="text-emerald-600 text-sm font-black tabular-nums">${remainingSpendingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
             </div>
           </div>
@@ -408,42 +483,46 @@ export default function MonthlyBudgetTab() {
 
       {/* 4. MODAL DRAWER OVERLAY DIALOG FOR THE DYNAMIC BUDGET BUILDER WIZARD */}
       {showBudgetModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn text-left overflow-y-auto">
-          <div className="bg-white rounded-[2rem] border border-slate-100 p-6 max-w-2xl w-full space-y-5 shadow-2xl my-8 animate-scaleUp max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn text-left overflow-y-auto">
+          <div className="bg-white rounded-[2rem] border border-gray-200 p-6 max-w-2xl w-full space-y-5 shadow-2xl my-8 max-h-[90vh] flex flex-col">
             
-            <div>
-              <h3 className="text-xl font-black text-slate-900 tracking-tight">Dynamic Budget Architect Wizard</h3>
-              <p className="text-xs text-slate-400 font-medium mt-0.5">Map custom tracking timelines across the calendar year and assemble transaction line envelopes inline.</p>
+            <div className="border-b border-gray-100 pb-3">
+              <h3 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-purple-600" /> Dynamic Budget Template Architect
+              </h3>
+              <p className="text-xs text-gray-400 font-medium mt-0.5">
+                Design system allocation horizons and register tracking matrices recursively across tenant parameters.
+              </p>
             </div>
 
             <form onSubmit={handleGenerateFreshBudgetStructure} className="space-y-4 flex-1 overflow-y-auto pr-1 flex flex-col justify-between">
               <div className="space-y-4">
                 
-                {/* CALENDAR TIMELINE SEGMENT TRACKER */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <div className="space-y-1 sm:col-span-1">
-                    <label className="text-[10px] uppercase font-black text-slate-400 block ml-0.5 select-none">Interval Mode</label>
+                {/* TIMELINE MATRIX ANCHORS SELECTION ROW */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-gray-50 p-4 rounded-2xl border border-gray-200 shadow-inner">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-black uppercase text-gray-400 block ml-0.5">Interval Parameter</label>
                     <select
                       value={wizardTimeframeType}
                       onChange={(e) => {
                         setWizardTimeframeType(e.target.value as any);
                         setWizardTimeframeValue(e.target.value === "month" ? "January" : "4");
                       }}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 h-11 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                      className="w-full bg-white border border-gray-200 rounded-xl px-3 h-11 text-xs font-black text-gray-800 outline-none focus:border-purple-500"
                     >
-                      <option value="month">Calendar Month</option>
-                      <option value="weeks">Custom Week Horizon</option>
-                      <option value="days">Custom Day Horizon</option>
+                      <option value="month">Standard Month Cycle</option>
+                      <option value="weeks">Week Frame Boundary</option>
+                      <option value="days">Custom Day Increment</option>
                     </select>
                   </div>
 
-                  <div className="space-y-1 sm:col-span-1">
-                    <label className="text-[10px] uppercase font-black text-slate-400 block ml-0.5 select-none">Timeframe Boundary</label>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-black uppercase text-gray-400 block ml-0.5">Chron Boundary</label>
                     {wizardTimeframeType === "month" ? (
                       <select
                         value={wizardTimeframeValue}
                         onChange={(e) => setWizardTimeframeValue(e.target.value)}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 h-11 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3 h-11 text-xs font-black text-gray-800 outline-none focus:border-purple-500"
                       >
                         {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map(m => (
                           <option key={m} value={m}>{m}</option>
@@ -456,92 +535,105 @@ export default function MonthlyBudgetTab() {
                         required
                         value={wizardTimeframeValue}
                         onChange={(e) => setWizardTimeframeValue(e.target.value)}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-4 h-11 text-xs font-bold text-slate-800 outline-none focus:border-blue-500 font-mono"
+                        className="w-full bg-white border border-gray-200 rounded-xl px-4 h-11 text-xs font-bold text-gray-800 outline-none focus:border-purple-500 font-mono"
                       />
                     )}
                   </div>
 
-                  <div className="space-y-1 sm:col-span-1">
-                    <label className="text-[10px] uppercase font-black text-slate-400 block ml-0.5 select-none">Budget Profile Title</label>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-black uppercase text-gray-400 block ml-0.5">Framework Title Profile</label>
                     <input 
                       type="text" 
                       required 
-                      placeholder="e.g., Primary Household, LLC Node..." 
+                      placeholder="e.g., Household Ledger Node..." 
                       value={newBudgetTitle}
                       onChange={(e) => setNewBudgetTitle(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 h-11 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                      className="w-full bg-white border border-gray-200 rounded-xl px-4 h-11 text-xs font-bold text-gray-800 outline-none focus:border-purple-500"
                     />
                   </div>
                 </div>
 
-                {/* INLINE DYNAMIC CATEGORY ENVELOPE STRUCTOR STAGE */}
-                <div className="border border-slate-100 rounded-2xl p-4 bg-slate-50/50 space-y-3">
-                  <span className="text-[11px] font-black uppercase text-slate-800 tracking-wider block">Stage New Inline Tracking Node</span>
+                {/* STAGING INLINE FIELD MANIPULATION DESK */}
+                <div className="border border-gray-200 rounded-2xl p-4 bg-gray-50/40 space-y-3 shadow-inner">
+                  <span className="text-[10px] font-mono font-black uppercase text-gray-900 tracking-wider block">
+                    Stage Live Evaluation Row Node
+                  </span>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <input 
                       type="text" 
-                      placeholder="Category Name (e.g., Auto Loan, Gas)..." 
+                      placeholder="Envelope Label (e.g., Insurance, Utilities)..." 
                       value={stageName}
                       onChange={(e) => setStageName(e.target.value)}
-                      className="bg-white border border-slate-200 rounded-xl px-3 h-10 text-xs font-bold text-slate-800 outline-none"
+                      className="bg-white border border-gray-200 rounded-xl px-3 h-10 text-xs font-bold text-gray-800 outline-none"
                     />
-                    <input 
-                      type="number" 
-                      placeholder="Cap Budget Value ($)..." 
-                      value={stageLimit}
-                      onChange={(e) => setStageLimit(e.target.value)}
-                      className="bg-white border border-slate-200 rounded-xl px-3 h-10 text-xs font-bold text-slate-800 outline-none font-mono"
-                    />
+                    <div className="relative flex items-center">
+                      <DollarSign className="absolute right-3 w-3.5 h-3.5 text-gray-400" />
+                      <input 
+                        type="number" 
+                        placeholder="Cap Target Budget Valuation ($)..." 
+                        value={stageLimit}
+                        onChange={(e) => setStageLimit(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-xl pl-3 pr-8 h-10 text-xs font-bold text-gray-800 outline-none font-mono"
+                      />
+                    </div>
                     <select
                       value={stageType}
                       onChange={(e) => setStageType(e.target.value as any)}
-                      className="bg-white border border-slate-200 rounded-xl px-3 h-10 text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                      className="bg-white border border-gray-200 rounded-xl px-3 h-10 text-xs font-black text-gray-800 outline-none cursor-pointer"
                     >
-                      <option value="category">Discretionary Category Row</option>
-                      <option value="basic">Fixed Foundation Basics Row</option>
+                      <option value="category">Fluid Variable Allocation Type</option>
+                      <option value="basic">Fixed Foundation Core Resource</option>
                     </select>
                     <input 
                       type="text" 
-                      placeholder="Plaid Match Keywords (e.g., shell, chevron)..." 
+                      placeholder="Plaid Match Keywords Token Strings (comma sep)..." 
                       value={stageKeywords}
                       onChange={(e) => setStageKeywords(e.target.value)}
-                      className="bg-white border border-slate-200 rounded-xl px-3 h-10 text-xs font-bold text-slate-800 outline-none"
+                      className="bg-white border border-gray-200 rounded-xl px-3 h-10 text-xs font-bold text-gray-800 outline-none"
                     />
                   </div>
 
                   <button
                     type="button"
                     onClick={addRowToStagingMatrix}
-                    className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs h-9 rounded-xl uppercase tracking-wider transition-all select-none"
+                    className="w-full bg-gray-900 text-white font-mono font-black text-[10px] h-9 rounded-xl uppercase tracking-wider hover:bg-gray-800 transition-all cursor-pointer"
                   >
-                    ＋ Append Row Item into Staging Matrix
+                    ＋ Commit Item Parameters Into Structural Staging Matrix
                   </button>
                 </div>
 
-                {/* ACTIVE STAGED ENVELOPES ITERATION LEDGER PREVIEW */}
+                {/* CURRENT ACTIVE STAGING LEDGER PREVIEW BOUNDS */}
                 <div className="space-y-1.5">
-                  <span className="text-[10px] uppercase font-black text-slate-400 block ml-1 select-none">Staging Ledger Matrix Queue ({stagedCategories.length})</span>
-                  <div className="border border-slate-100 rounded-2xl overflow-hidden divide-y divide-slate-100 bg-white max-h-[160px] overflow-y-auto shadow-sm">
+                  <span className="text-[9px] font-mono font-black uppercase text-gray-400 block ml-1">
+                    Staging Matrix Processing Queue ({stagedCategories.length} Nodes Registered)
+                  </span>
+                  <div className="border border-gray-200 rounded-2xl overflow-hidden divide-y divide-gray-100 bg-white max-h-[160px] overflow-y-auto shadow-sm">
                     {stagedCategories.map((row, idx) => (
-                      <div key={idx} className="p-3 flex justify-between items-center text-xs hover:bg-slate-50 transition-colors">
+                      <div key={idx} className="p-3.5 flex justify-between items-center text-xs hover:bg-gray-50/50 transition-colors">
                         <div className="min-w-0 flex-1 pr-4">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-800 truncate">{row.name}</span>
-                            <span className={`text-[8px] font-mono font-black uppercase px-1.5 py-0.5 rounded ${row.type === 'basic' ? 'bg-indigo-50 text-indigo-500' : 'bg-blue-50 text-blue-500'}`}>
+                            <span className="font-black text-gray-900 truncate">{row.name}</span>
+                            <span className={`text-[8px] font-mono font-black uppercase px-2 py-0.5 rounded-md border ${
+                              row.type === 'basic' 
+                                ? 'bg-purple-50 border-purple-100 text-purple-600' 
+                                : 'bg-blue-50 border-blue-100 text-blue-600'
+                            }`}>
                               {row.type}
                             </span>
                           </div>
-                          <span className="text-[9px] text-slate-400 block truncate font-mono mt-0.5">Tags: {row.keywords || "auto-generated"}</span>
+                          <span className="text-[9px] text-gray-400 block truncate font-mono mt-0.5">Signature Key tags: {row.keywords || "SYSTEM_FALLBACK"}</span>
                         </div>
                         <div className="flex items-center gap-4 shrink-0">
-                          <span className="font-mono font-black text-slate-900">${row.limit.toLocaleString()}</span>
+                          <span className="font-mono font-black text-gray-900 bg-gray-50 border border-gray-100 px-2 py-1 rounded-md">
+                            ${row.limit.toLocaleString()}
+                          </span>
                           <button
                             type="button"
                             onClick={() => removeRowFromStagingMatrix(idx)}
-                            className="text-rose-500 hover:text-rose-600 text-xs font-black p-1 hover:bg-rose-50 rounded-lg transition-all"
+                            className="text-gray-400 hover:text-rose-600 p-1.5 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
                           >
-                            ✕
+                            <X className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
@@ -551,21 +643,21 @@ export default function MonthlyBudgetTab() {
 
               </div>
 
-              {/* ACTION COMMAND DECKS */}
-              <div className="flex gap-2 pt-4 border-t border-slate-100 mt-4">
+              {/* ACTION COMMAND BLOCK SELECTION PANEL STRIP */}
+              <div className="flex gap-2 pt-4 border-t border-gray-200 mt-4">
                 <button
                   type="button"
                   onClick={() => setShowBudgetModal(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs h-11 rounded-xl transition-all uppercase tracking-wider"
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-mono font-black text-xs h-11 rounded-xl transition-all uppercase tracking-wider cursor-pointer"
                 >
-                  Abort Action
+                  Abort Construction
                 </button>
                 <button
                   type="submit"
                   disabled={stagedCategories.length === 0 || !newBudgetTitle}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 text-white font-bold text-xs h-11 rounded-xl transition-all uppercase tracking-wider shadow-md disabled:shadow-none disabled:cursor-not-allowed"
+                  className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-400 text-white font-mono font-black text-xs h-11 rounded-xl uppercase tracking-wider shadow-md disabled:shadow-none transition-all disabled:cursor-not-allowed cursor-pointer"
                 >
-                  Instantiate Node Framework
+                  Instantiate Profile Framework Array
                 </button>
               </div>
             </form>

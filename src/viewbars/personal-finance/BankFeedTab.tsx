@@ -1,8 +1,19 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { AccountAsset } from "@/app/dashboard/budget/page";
+import { AccountAsset } from "@/app/dashboard/my-apps/budget/page";
 import PlaidLinkButton from "@/components/PlaidLinkButton";
+import { 
+  RefreshCw, 
+  Calendar, 
+  Layers, 
+  ArrowUpRight, 
+  ArrowDownLeft, 
+  Database, 
+  CreditCard,
+  TrendingUp,
+  CircleAlert
+} from "lucide-react";
 
 interface TransactionRow {
   id: string;
@@ -18,10 +29,9 @@ interface BankFeedTabProps {
   totalAssets: number;
 }
 
-export default function BankFeedTab({ accounts, totalAssets }: BankFeedTabProps) {
-  const devUserId = "mock-dev-user-uuid-123";
-
-  // --- STATE ENGINES ---
+export default function BankFeedTab({ accounts, totalAssets }: BankFeedTabProps): React.JSX.Element {
+  // --- MULTI-TENANT SESSION HANDSHAKE ---
+  const [userEmail, setUserEmail] = useState<string>("");
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [activeSubTab, setActiveSubTab] = useState<"all" | "income" | "expense">("all");
   const [lastUpdated, setLastUpdated] = useState<string>("");
@@ -29,21 +39,35 @@ export default function BankFeedTab({ accounts, totalAssets }: BankFeedTabProps)
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
 
-  // Find the Plaid account ID from the local internal asset configuration block
+  // Hydrate tenant state securely from structural browser memory
+  useEffect(() => {
+    const session = localStorage.getItem("active_software_user");
+    if (session) {
+      try {
+        const parsed = JSON.parse(session);
+        if (parsed?.email) {
+          setUserEmail(parsed.email);
+        }
+      } catch (err) {
+        console.error("LEDGER_AUTH_CONTEXT_EXCEPTION:", err);
+      }
+    }
+  }, []);
+
+  // Isolate active institutional registry nodes
   const currentSelectedAccount = accounts.find(a => a.id === selectedAccountId);
-  // Default fallback assignment to make sure the first node matches cleanly on load
   const targetPlaidId = currentSelectedAccount?.id || accounts[0]?.id || "";
 
-  // --- DYNAMIC DATA FETCH COMPILER ---
+  // --- DYNAMIC CLOUD SYNC ENGINE ---
   const syncLiveTransactions = useCallback(async (plaidId: string) => {
-    if (!plaidId) return;
+    if (!plaidId || !userEmail) return;
     setIsSyncing(true);
     try {
       const response = await fetch("/api/plaid/sync-transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: devUserId,
+          user_id: userEmail, // High-isolation tenant context key bound upstream
           plaid_account_id: plaidId,
         }),
       });
@@ -51,33 +75,35 @@ export default function BankFeedTab({ accounts, totalAssets }: BankFeedTabProps)
       if (response.ok) {
         const data = await response.json();
         setTransactions(data.transactions || []);
-        setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+        setLastUpdated(
+          new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        );
       }
     } catch (err) {
-      console.error("Failed to run real-time background sync:", err);
+      console.error("REALTIME_LEDGER_SYNC_FAULT:", err);
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [userEmail]);
 
-  // Sync automatically on component mount or whenever the user clicks a different account block
+  // Handle downstream structural synchronization updates across lifecycle transitions
   useEffect(() => {
-    if (accounts.length > 0) {
+    if (accounts.length > 0 && userEmail) {
       if (!selectedAccountId) {
         setSelectedAccountId(accounts[0].id);
       }
       syncLiveTransactions(selectedAccountId || accounts[0].id);
     }
-  }, [selectedAccountId, accounts, syncLiveTransactions]);
+  }, [selectedAccountId, accounts, userEmail, syncLiveTransactions]);
 
-  // --- INTERACTION PIPELINES ---
+  // --- MUTATION PIPE HANDLERS ---
   const handleManualRefreshRequest = () => {
-    if (refreshesRemaining <= 0 || isSyncing) return;
+    if (refreshesRemaining <= 0 || isSyncing || !targetPlaidId) return;
     setRefreshesRemaining((prev) => prev - 1);
     syncLiveTransactions(targetPlaidId);
   };
 
-  // --- SUB-TAB INTERFACE FILTERS ---
+  // --- SUB-ARRAY REGISTRY FILTERS ---
   const filteredTransactions = transactions.filter(tx => {
     if (activeSubTab === "income") return tx.type === "income";
     if (activeSubTab === "expense") return tx.type === "expense";
@@ -85,56 +111,65 @@ export default function BankFeedTab({ accounts, totalAssets }: BankFeedTabProps)
   });
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-6 animate-fadeIn text-gray-800 select-none">
       
-      {/* 1. CONTROL DECK HEADER STRIP */}
-      <div className="border-b border-slate-200/60 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* 1. CONTROL DECK RUNTIME STRIP HEADER */}
+      <div className="border-b border-gray-200 pb-5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
-          <h3 className="text-xl font-black text-slate-900 tracking-tight">Institution Account Feed</h3>
-          <p className="text-xs text-slate-400 font-medium mt-0.5">
-            Real-time liquid capital ledger arrays synced dynamically via secure Plaid API endpoints.
+          <h3 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-2">
+            <Database className="w-5 h-5 text-purple-600" /> Institution Network Pipeline
+          </h3>
+          <p className="text-xs text-gray-400 font-medium mt-0.5">
+            Liquid capital streams mapped dynamically via automated Open Banking cryptographic parameters.
           </p>
-          <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-500 font-bold font-mono">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Last Synced: <span className="text-blue-500 tabular-nums">{lastUpdated || "Syncing with ledger..."}</span>
+          <div className="flex items-center gap-2 mt-2 text-[10px] text-gray-500 font-bold font-mono uppercase bg-gray-50 px-2.5 py-1 rounded-md border border-gray-100 max-w-fit">
+            <span className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-purple-500 animate-ping' : 'bg-emerald-500'}`} />
+            Sync Pulse state: <span className="text-purple-600 font-black">{lastUpdated || "AWAITING_HANDSHAKE"}</span>
           </div>
         </div>
         
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
           <button
             type="button"
             disabled={refreshesRemaining <= 0 || isSyncing || !targetPlaidId}
             onClick={handleManualRefreshRequest}
-            className="flex-1 md:flex-none border border-slate-200 hover:border-slate-300 bg-white text-slate-700 font-bold text-xs px-4 h-11 rounded-xl transition-all shadow-sm flex flex-col justify-center items-center select-none active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 lg:flex-none bg-white border border-gray-200 hover:border-gray-300 text-gray-700 font-bold text-xs px-4 h-11 rounded-xl transition-all shadow-sm flex flex-col justify-center items-center active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <div className="flex items-center gap-1.5">
-              <span className={`text-[11px] ${isSyncing ? 'animate-spin block' : ''}`}>🔄</span>
-              <span>{isSyncing ? "Syncing..." : "Refresh Balance"}</span>
+              <RefreshCw className={`w-3.5 h-3.5 text-purple-600 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? "Re-aligning Array..." : "Refresh Channel Balance"}</span>
             </div>
-            <span className="text-[9px] text-slate-400 font-mono tracking-tight mt-0.5 font-normal">
-              {refreshesRemaining} Plan Queries Left This Month
+            <span className="text-[9px] text-gray-400 font-mono tracking-tight mt-0.5 font-normal">
+              {refreshesRemaining} Priority Handshakes Left
             </span>
           </button>
 
-          <PlaidLinkButton 
-            userId={devUserId} 
-            onSuccessSync={() => syncLiveTransactions(targetPlaidId)} 
-          />
+          {userEmail && (
+            <PlaidLinkButton 
+              userId={userEmail} 
+              onSuccessSync={() => syncLiveTransactions(targetPlaidId)} 
+            />
+          )}
         </div>
       </div>
 
-      {/* 2. CUMULATIVE VALUE DISK */}
-      <div className="bg-white border border-slate-100 shadow-md rounded-[2rem] p-6 text-center relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-sky-400" />
-        <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Cumulative Net Portfolio Value</span>
-        <span className="text-4xl font-black text-slate-900 mt-2 block tracking-tight tabular-nums">
-          ${totalAssets.toLocaleString()}
-        </span>
+      {/* 2. CUMULATIVE VALUE VALUE MATRIX METER */}
+      <div className="p-[1px] bg-gradient-to-r from-purple-600 via-blue-500 to-gray-200 rounded-2xl shadow-sm">
+        <div className="bg-white rounded-[15px] p-6 text-center relative overflow-hidden">
+          <span className="text-[10px] text-gray-400 font-mono font-black uppercase tracking-widest flex items-center justify-center gap-1.5">
+            <TrendingUp className="w-4 h-4 text-purple-600" /> AGGREGATED PORTFOLIO VALUE MATRIX
+          </span>
+          <span className="text-3xl font-mono font-black text-transparent bg-clip-text bg-gradient-to-r from-gray-900 to-slate-700 mt-2 block tracking-tight tabular-nums">
+            ${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+        </div>
       </div>
 
-      {/* 3. INTERACTIVE ACCOUNT SELECTION GRID BLOCK */}
+      {/* 3. INTERACTIVE FINANCIAL ASSETS NODE SELECTION FEED GRID */}
       <div className="space-y-2">
-        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block ml-1">Select Financial Node Feed</span>
+        <span className="text-[10px] font-mono font-black text-gray-400 uppercase tracking-wider block ml-1">
+          Active Institutional Array Nodes
+        </span>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {accounts.map((acc) => {
             const isSelected = acc.id === selectedAccountId;
@@ -148,28 +183,28 @@ export default function BankFeedTab({ accounts, totalAssets }: BankFeedTabProps)
                 }}
                 className={`w-full text-left p-5 rounded-2xl flex justify-between items-center transition-all relative overflow-hidden border ${
                   isSelected 
-                    ? "bg-gradient-to-br from-slate-900 to-[#121824] border-blue-500 shadow-md text-white" 
-                    : "bg-white border-slate-100 shadow-sm hover:border-slate-200 text-slate-800"
+                    ? "bg-gradient-to-br from-gray-900 via-slate-900 to-gray-900 border-purple-600 shadow-md text-white scale-[1.01]" 
+                    : "bg-white border-gray-200 shadow-sm hover:border-gray-300 text-gray-800"
                 }`}
               >
-                {isSelected && (
-                  <div className="absolute top-0 left-0 h-full w-1 bg-blue-500" />
-                )}
                 <div className="min-w-0">
-                  <span className={`text-[9px] px-2 py-0.5 rounded uppercase font-mono tracking-wider font-extrabold ${
-                    isSelected ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" : "bg-slate-100 text-slate-500"
+                  <span className={`text-[9px] px-2 py-0.5 rounded uppercase font-mono tracking-wider font-black ${
+                    isSelected ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-gray-100 text-gray-500 border border-gray-200"
                   }`}>
                     {acc.institution}
                   </span>
-                  <h4 className="text-sm font-bold mt-2 truncate">{acc.name}</h4>
-                  <span className="text-[10px] capitalize block mt-0.5 text-slate-400">
-                    {acc.type.replace("_", " ")} Stream
+                  <h4 className="text-sm font-black mt-2.5 tracking-tight truncate flex items-center gap-1.5">
+                    <CreditCard className={`w-4 h-4 shrink-0 ${isSelected ? 'text-blue-400' : 'text-gray-400'}`} />
+                    {acc.name}
+                  </h4>
+                  <span className="text-[10px] capitalize block mt-0.5 font-medium text-gray-400">
+                    {acc.type.replace("_", " ")} Node Partition
                   </span>
                 </div>
-                <span className={`text-base font-black tabular-nums shrink-0 ml-4 ${
-                  !isSelected && acc.balance < 0 ? 'text-rose-500' : isSelected && acc.balance < 0 ? 'text-rose-400' : ''
+                <span className={`text-base font-mono font-black tabular-nums shrink-0 ml-4 ${
+                  !isSelected && acc.balance < 0 ? 'text-rose-600' : isSelected && acc.balance < 0 ? 'text-rose-400' : ''
                 }`}>
-                  ${acc.balance.toLocaleString()}
+                  ${acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </button>
             );
@@ -177,28 +212,29 @@ export default function BankFeedTab({ accounts, totalAssets }: BankFeedTabProps)
         </div>
       </div>
 
-      {/* 4. GRANULAR LEDGER TRANSACTION MODULE LAYER */}
-      <div className="bg-white border border-slate-100 shadow-sm rounded-2xl overflow-hidden p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-slate-100 pb-3">
+      {/* 4. GRANULAR LEDGER STATEMENT TRANSMISSION VIEWER */}
+      <div className="bg-white border border-gray-200 shadow-sm rounded-2xl overflow-hidden p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-gray-100 pb-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-black uppercase tracking-wider text-slate-800">
-              {currentSelectedAccount?.institution || accounts[0]?.institution || "Node"} Ledger Stack
+            <span className="text-xs font-mono font-black uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-purple-600" /> 
+              {currentSelectedAccount?.institution || accounts[0]?.institution || "System"} Ledger Array Stack
             </span>
-            <span className="text-[10px] bg-blue-50 text-blue-600 font-mono font-bold px-2 py-0.5 rounded">
-              {filteredTransactions.length} Logged rows
+            <span className="text-[10px] bg-purple-50 text-purple-600 font-mono font-bold px-2.5 py-0.5 rounded-full border border-purple-100">
+              {filteredTransactions.length} Row logs found
             </span>
           </div>
 
-          <div className="bg-slate-100 p-0.5 rounded-lg flex gap-0.5 max-w-fit self-start sm:self-auto select-none">
+          <div className="bg-gray-100 p-1 rounded-xl flex gap-1 self-start sm:self-auto shadow-inner">
             {(["all", "income", "expense"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setActiveSubTab(tab)}
-                className={`px-3 py-1 text-[10px] uppercase tracking-wider font-black rounded-md transition-all ${
+                className={`px-3 py-1.5 text-[10px] uppercase tracking-wider font-black rounded-lg transition-all cursor-pointer ${
                   activeSubTab === tab 
-                    ? "bg-white text-slate-900 shadow-xs" 
-                    : "text-slate-400 hover:text-slate-600"
+                    ? "bg-white text-gray-900 shadow-sm" 
+                    : "text-gray-400 hover:text-gray-600"
                 }`}
               >
                 {tab}
@@ -207,35 +243,50 @@ export default function BankFeedTab({ accounts, totalAssets }: BankFeedTabProps)
           </div>
         </div>
 
-        <div className="divide-y divide-slate-100 max-h-[380px] overflow-y-auto pr-1 custom-scrollbar">
+        {/* DATA CONTAINER MESH VIEWER */}
+        <div className="divide-y divide-gray-100 max-h-[380px] overflow-y-auto pr-1">
           {isSyncing ? (
-            <div className="text-center py-10 space-y-2 select-none">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500 mx-auto" />
-              <p className="text-xs font-bold text-slate-400 tracking-tight">Pulling real-time ledger records...</p>
+            <div className="text-center py-12 space-y-3">
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-purple-600 border-b-transparent mx-auto" />
+              <p className="text-xs font-mono font-bold text-purple-600 tracking-wider uppercase animate-pulse">
+                De-serializing database transaction nodes...
+              </p>
             </div>
           ) : filteredTransactions.length > 0 ? (
             filteredTransactions.map((tx) => (
-              <div key={tx.id} className="py-3.5 flex justify-between items-center text-xs first:pt-0 last:pb-0 group">
-                <div className="min-w-0 pr-4">
-                  <h5 className="font-bold text-slate-800 tracking-tight truncate group-hover:text-blue-500 transition-colors">
-                    {tx.description}
-                  </h5>
-                  <span className="text-[10px] font-medium text-slate-400 block mt-0.5 font-mono tabular-nums">
-                    📅 {tx.date}
-                  </span>
+              <div key={tx.id} className="py-3.5 flex justify-between items-center text-xs first:pt-0 last:pb-0 group hover:bg-gray-50/50 px-2 rounded-xl transition-colors">
+                <div className="min-w-0 pr-4 flex items-center gap-3">
+                  <div className={`p-2 rounded-xl shrink-0 border ${
+                    tx.type === "income" 
+                      ? "bg-emerald-50 border-emerald-100 text-emerald-600" 
+                      : "bg-gray-50 border-gray-100 text-gray-400 group-hover:text-purple-600 group-hover:bg-purple-50 group-hover:border-purple-100"
+                  } transition-colors`}>
+                    {tx.type === "income" ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                  </div>
+                  <div className="min-w-0">
+                    <h5 className="font-black text-gray-900 tracking-tight truncate">
+                      {tx.description}
+                    </h5>
+                    <span className="text-[10px] font-bold text-gray-400 flex items-center gap-1 mt-0.5 font-mono tabular-nums">
+                      <Calendar className="w-3 h-3" /> {tx.date}
+                    </span>
+                  </div>
                 </div>
-                <span className={`font-extrabold text-sm tabular-nums shrink-0 ${
-                  tx.type === "income" ? "text-emerald-500" : "text-slate-700"
+                <span className={`font-mono font-black text-sm tabular-nums shrink-0 ${
+                  tx.type === "income" ? "text-emerald-600" : "text-gray-900"
                 }`}>
-                  {tx.type === "income" ? "+" : ""}${Math.abs(tx.amount).toFixed(2)}
+                  {tx.type === "income" ? "+" : "-"}${Math.abs(tx.amount).toFixed(2)}
                 </span>
               </div>
             ))
           ) : (
-            <div className="text-center py-10 space-y-2 select-none">
-              <span className="text-2xl block opacity-40">🕳️</span>
-              <p className="text-xs font-bold text-slate-400 tracking-tight">
-                No transactions found for this account in your database yet. Try running a balance refresh!
+            <div className="text-center py-12 space-y-2 max-w-sm mx-auto">
+              <CircleAlert className="w-6 h-6 text-gray-300 mx-auto" />
+              <p className="text-xs font-black text-gray-400 uppercase tracking-wide font-mono">
+                [ INDEX_PARTITION_VACANT ]
+              </p>
+              <p className="text-xs text-gray-400 leading-relaxed font-medium">
+                No verified execution rows registered inside this dynamic query bounds. Run an account balance state refresh to poll underlying API pipelines.
               </p>
             </div>
           )}

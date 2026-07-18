@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import Navbar from "../../components/Navbar";
+import { supabase } from '@/lib/supabaseClient';
 
 interface StackMetric {
   title: string;
@@ -39,6 +40,18 @@ export default function CustomDevelopment(): React.JSX.Element {
   // Tooltip Explanations State
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
 
+  // Intake Wizard Management States
+  const [isWizardOpen, setIsWizardOpen] = useState<boolean>(false);
+  const [wizardStep, setWizardStep] = useState<number>(1);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Data Field Collection Strings
+  const [contactName, setContactName] = useState<string>("");
+  const [companyName, setCompanyName] = useState<string>("");
+  const [phone, setPhone] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
+
   const toggleTooltip = (field: string) => {
     setActiveTooltip(activeTooltip === field ? null : field);
   };
@@ -61,8 +74,56 @@ export default function CustomDevelopment(): React.JSX.Element {
 
   const finalTotal = isNotForProfit ? rawTotal * 0.8 : rawTotal;
 
+  // Handles custom scoping parameter submission directly to Supabase rows
+  const handleIntakeSubmission = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await supabase
+        .from('custom_web_inquiries')
+        .insert([
+          {
+            company_name: companyName,
+            contact_name: contactName,
+            contact_email: email,
+            contact_phone: phone,
+            involves_hardware: involvesHardware,
+            hardware_units: hardwareCount,
+            screen_layouts: pageCount,
+            api_gateways: apiCount,
+            sms_volume: textNotifications,
+            is_not_for_profit: isNotForProfit,
+            calculated_quote: parseFloat(finalTotal.toFixed(2))
+          }
+        ]);
+
+      if (!error) {
+        setWizardStep(2);
+      } else {
+        alert(`Supabase Custom Pipeline Error: ${error.message}`);
+        console.error("SUPABASE_PIPELINE_ERROR:", error.message);
+      }
+    } catch (err: any) {
+      alert(`Connection Error: ${err.message || err}`);
+      console.error("SUPABASE_UPLINK_CRITICAL_FAILURE:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const closeAndResetWizard = () => {
+    setIsWizardOpen(false);
+    setWizardStep(1);
+    setContactName("");
+    setCompanyName("");
+    setPhone("");
+    setEmail("");
+    setNotes("");
+  };
+
   return (
-    <div className="min-h-screen bg-[#4B5563] text-[#F9FAFB] font-sans pt-16 select-none">
+    <div className="min-h-screen bg-[#4B5563] text-[#F9FAFB] font-sans pt-16 select-none relative">
       <Navbar />
       
       {/* Hero Section */}
@@ -96,6 +157,7 @@ export default function CustomDevelopment(): React.JSX.Element {
               <div className="flex items-center space-x-2">
                 <label className="text-sm font-bold uppercase tracking-wider text-white">System Deployment Model</label>
                 <button 
+                  type="button"
                   onClick={() => toggleTooltip("hardwareToggle")} 
                   className="text-[#00F2FE] hover:text-white transition text-sm focus:outline-none"
                 >
@@ -111,12 +173,14 @@ export default function CustomDevelopment(): React.JSX.Element {
 
               <div className="flex gap-3">
                 <button 
+                  type="button"
                   onClick={() => { setInvolvesHardware(false); setHardwareCount(0); }}
                   className={`flex-1 py-3 border font-bold text-xs uppercase rounded-xl tracking-wider transition-all ${!involvesHardware ? 'bg-[#00B8C4] text-gray-900 border-[#00B8C4]' : 'border-gray-500/40 text-gray-300 hover:border-gray-400'}`}
                 >
                   Pure Cloud Web App
                 </button>
                 <button 
+                  type="button"
                   onClick={() => setInvolvesHardware(true)}
                   className={`flex-1 py-3 border font-bold text-xs uppercase rounded-xl tracking-wider transition-all ${involvesHardware ? 'bg-[#00B8C4] text-gray-900 border-[#00B8C4]' : 'border-gray-500/40 text-gray-300 hover:border-gray-400'}`}
                 >
@@ -131,7 +195,7 @@ export default function CustomDevelopment(): React.JSX.Element {
                 <div className="flex justify-between items-center">
                   <div className="flex items-center space-x-2">
                     <label className="text-xs font-bold uppercase tracking-wider text-gray-200">Hardware Component Target</label>
-                    <button onClick={() => toggleTooltip("hardwareCount")} className="text-[#00F2FE] hover:text-white text-xs">ⓘ</button>
+                    <button type="button" onClick={() => toggleTooltip("hardwareCount")} className="text-[#00F2FE] hover:text-white text-xs">ⓘ</button>
                   </div>
                   <span className="font-mono text-sm font-black text-[#00F2FE] bg-[#374151] px-2.5 py-0.5 rounded border border-gray-500/20">{hardwareCount} Units</span>
                 </div>
@@ -156,7 +220,7 @@ export default function CustomDevelopment(): React.JSX.Element {
               <div className="flex justify-between items-center">
                 <div className="flex items-center space-x-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-gray-200">Screen Layout Capacity</label>
-                  <button onClick={() => toggleTooltip("pages")} className="text-[#00F2FE] hover:text-white text-xs">ⓘ</button>
+                  <button type="button" onClick={() => toggleTooltip("pages")} className="text-[#00F2FE] hover:text-white text-xs">ⓘ</button>
                 </div>
                 <span className="font-mono text-sm font-black text-[#00F2FE] bg-[#4B5563] px-2.5 py-0.5 rounded border border-gray-500/20">{pageCount} Pages</span>
               </div>
@@ -175,12 +239,12 @@ export default function CustomDevelopment(): React.JSX.Element {
               />
             </div>
 
-            {/* APIs Slider */}
+            {/* FAQs Slider */}
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <div className="flex items-center space-x-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-gray-200">API Gateway Handshakes</label>
-                  <button onClick={() => toggleTooltip("apis")} className="text-[#00F2FE] hover:text-white text-xs">ⓘ</button>
+                  <button type="button" onClick={() => toggleTooltip("apis")} className="text-[#00F2FE] hover:text-white text-xs">ⓘ</button>
                 </div>
                 <span className="font-mono text-sm font-black text-[#00F2FE] bg-[#4B5563] px-2.5 py-0.5 rounded border border-gray-500/20">{apiCount} Hubs</span>
               </div>
@@ -204,7 +268,7 @@ export default function CustomDevelopment(): React.JSX.Element {
               <div className="flex justify-between items-center">
                 <div className="flex items-center space-x-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-gray-200">SMS Outbound Notifications</label>
-                  <button onClick={() => toggleTooltip("sms")} className="text-[#00F2FE] hover:text-white text-xs">ⓘ</button>
+                  <button type="button" onClick={() => toggleTooltip("sms")} className="text-[#00F2FE] hover:text-white text-xs">ⓘ</button>
                 </div>
                 <span className="font-mono text-sm font-black text-[#00F2FE] bg-[#4B5563] px-2.5 py-0.5 rounded border border-gray-500/20">{textNotifications.toLocaleString()} /mo</span>
               </div>
@@ -291,8 +355,13 @@ export default function CustomDevelopment(): React.JSX.Element {
                 </div>
               </div>
 
-              <button className="w-full py-4 bg-gradient-to-r from-[#00B8C4] to-[#00F2FE] text-gray-900 font-black text-xs uppercase tracking-widest rounded-xl shadow-lg hover:opacity-95 transition-all focus:outline-none">
-                Submit Architecture Scope Plan →
+              {/* Form Trigger Action Button */}
+              <button 
+                type="button"
+                onClick={() => setIsWizardOpen(true)}
+                className="w-full py-4 bg-gradient-to-r from-[#00B8C4] to-[#00F2FE] text-gray-900 font-black text-xs uppercase tracking-widest rounded-xl shadow-lg hover:opacity-95 transition-all focus:outline-none"
+              >
+                Continue with project approval →
               </button>
             </div>
           </div>
@@ -305,6 +374,7 @@ export default function CustomDevelopment(): React.JSX.Element {
           {(["frontend", "backend"] as const).map((tab) => (
             <button
               key={tab}
+              type="button"
               onClick={() => setActiveTab(tab)}
               className={`px-8 py-4 font-bold text-sm uppercase tracking-wider border-b-2 transition-all ${
                 activeTab === tab ? "border-[#00F2FE] text-white text-glow" : "border-transparent text-gray-300 hover:text-white"
@@ -336,6 +406,141 @@ export default function CustomDevelopment(): React.JSX.Element {
           </div>
         </div>
       </section>
+
+      {/* ----------------------------------------------------
+          PROJECT APPROVAL MODAL WIZARD OVERLAY
+      ---------------------------------------------------- */}
+      {isWizardOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-lg bg-[#374151] border border-gray-500/40 rounded-3xl p-6 md:p-8 shadow-2xl relative animate-fadeIn overflow-hidden">
+            <div className="absolute -top-20 -right-20 w-44 h-44 bg-[#00F2FE]/5 rounded-full blur-2xl pointer-events-none" />
+
+            {/* STAGE 1: INGESTION FORM MATRIX */}
+            {wizardStep === 1 ? (
+              <form onSubmit={handleIntakeSubmission} className="space-y-5">
+                <div className="text-left border-b border-gray-500/20 pb-3 flex justify-between items-start">
+                  <div>
+                    <span className="text-[9px] font-mono font-bold text-[#00F2FE] tracking-widest uppercase block">// ARCHITECTURE PROVISION MATRIX</span>
+                    <h3 className="text-lg font-black text-white uppercase italic mt-1">Project Specification Data</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeAndResetWizard}
+                    className="text-gray-400 hover:text-white font-mono text-xs bg-[#4B5563]/50 border border-gray-500/20 px-2 py-1 rounded-md"
+                  >
+                    ESC
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-400">Contact Person Name</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={isSubmitting}
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
+                      placeholder="e.g., James Buchanan"
+                      className="w-full bg-[#4B5563] border border-gray-500/40 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 outline-none focus:border-[#00F2FE]"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-400">Company / Business Identity</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={isSubmitting}
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      placeholder="e.g., Nexus Labs Inc."
+                      className="w-full bg-[#4B5563] border border-gray-500/40 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 outline-none focus:border-[#00F2FE]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-400">Contact Line (Phone)</label>
+                    <input
+                      type="tel"
+                      required
+                      disabled={isSubmitting}
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g., 5733534483"
+                      className="w-full bg-[#4B5563] border border-gray-500/40 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 outline-none focus:border-[#00F2FE]"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-400">Communication Node (Email)</label>
+                    <input
+                      type="email"
+                      required
+                      disabled={isSubmitting}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="e.g., name@outlook.com"
+                      className="w-full bg-[#4B5563] border border-gray-500/40 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 outline-none focus:border-[#00F2FE]"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-mono font-bold uppercase text-gray-400">Functional Notes & Requirements</label>
+                  <textarea
+                    rows={3}
+                    required
+                    disabled={isSubmitting}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Describe external endpoints, processing workflows, or structural parameters desired..."
+                    className="w-full bg-[#4B5563] border border-gray-500/40 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 outline-none focus:border-[#00F2FE] resize-none"
+                  />
+                </div>
+
+                <div className="bg-[#4B5563]/30 border border-gray-500/10 p-3 rounded-xl flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-gray-400 uppercase">Live Calculated Quote Matrix:</span>
+                  <span className="text-[#00F2FE] font-bold tracking-wide font-mono">${finalTotal.toFixed(2)}+</span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3.5 bg-gradient-to-r from-[#00B8C4] to-[#00F2FE] text-gray-900 font-black text-xs uppercase tracking-widest rounded-xl shadow-lg hover:opacity-95 focus:outline-none disabled:opacity-50"
+                >
+                  {isSubmitting ? "Syncing Workspace Parameters..." : "Submit Allocation Target Matrix"}
+                </button>
+              </form>
+            ) : (
+              /* STAGE 2: TARGET LOG COMPLETE READOUT */
+              <div className="space-y-6 text-center py-6 animate-fadeIn">
+                <div className="mx-auto w-12 h-12 bg-cyan-500/10 border border-[#00F2FE] text-[#00F2FE] text-glow rounded-full flex items-center justify-center text-xl font-bold animate-bounce">
+                  ✓
+                </div>
+                
+                <div className="space-y-3">
+                  <h4 className="text-lg font-black text-white uppercase italic tracking-tight">System Handshake Finalized</h4>
+                  <p className="text-xs text-gray-200 leading-relaxed px-2 bg-[#4B5563]/20 border border-gray-500/10 p-5 rounded-2xl font-sans">
+                    Thank you for contacting us! We look forward to working with you! Please expect a response within the next 32 hours for the next steps!
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeAndResetWizard}
+                  className="px-6 py-2.5 bg-[#4B5563] border border-gray-500/40 hover:border-gray-400 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all focus:outline-none"
+                >
+                  Close Terminal Connection
+                </button>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }

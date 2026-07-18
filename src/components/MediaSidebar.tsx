@@ -1,68 +1,127 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { Film, Tv, Gamepad2, BookOpen, Settings, UploadCloud, Search } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { 
+  Film, 
+  Tv, 
+  Gamepad2, 
+  BookOpen, 
+  LayoutGrid, 
+  UploadCloud, 
+  Search,
+  ShieldCheck
+} from "lucide-react";
 
-type MediaTab = 'overview' | 'movies' | 'tv' | 'gaming' | 'books' | 'import' | 'explore';
+export type MediaTab = 'overview' | 'movies' | 'tv' | 'gaming' | 'books' | 'import' | 'explore';
 
 interface MediaSidebarProps {
   activeTab: MediaTab;
   setActiveTab: (tab: MediaTab) => void;
 }
 
-export default function MediaSidebar({ activeTab, setActiveTab }: MediaSidebarProps) {
-  const navItems = [
-    { id: 'overview', label: 'Overview', icon: Settings }, // Acts as Account/Dashboard overview
-    { id: 'movies', label: 'Movies', icon: Film },
-    { id: 'tv', label: 'TV Shows', icon: Tv },
-    { id: 'gaming', label: 'Gaming', icon: Gamepad2 },
-    { id: 'books', label: 'Books', icon: BookOpen },
-    { id: 'explore', label: 'Explore', icon: Search },
-  ] as const;
+interface SidebarNavItem {
+  id: MediaTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const NAVIGATION_ITEMS: SidebarNavItem[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutGrid },
+  { id: 'movies', label: 'Movies', icon: Film },
+  { id: 'tv', label: 'TV Shows', icon: Tv },
+  { id: 'gaming', label: 'Gaming', icon: Gamepad2 },
+  { id: 'books', label: 'Books', icon: BookOpen },
+  { id: 'explore', label: 'Explore', icon: Search },
+];
+
+export default function MediaSidebar({ activeTab, setActiveTab }: MediaSidebarProps): React.JSX.Element {
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
+
+  useEffect(() => {
+    const session = localStorage.getItem("active_software_user");
+    if (session) {
+      try {
+        const parsed = JSON.parse(session);
+        if (parsed?.email) {
+          setTenantEmail(parsed.email);
+        } else {
+          setTenantEmail("anonymous_isolated");
+        }
+      } catch (err) {
+        console.error("MEDIA_SIDEBAR_AUTH_PARSE_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    } else {
+      setTenantEmail("unauthenticated_session");
+    }
+  }, []);
 
   return (
-    <aside className="w-64 bg-zinc-950 border-r border-zinc-800 h-full flex flex-col justify-between p-4 text-zinc-200">
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider px-3">
-            My Media Catalog
+    <aside className="w-64 bg-white border-r border-zinc-200 hidden md:flex flex-col justify-between shrink-0 min-h-screen select-none">
+      <div className="p-6">
+        {/* Core Subsystem Branding Panel */}
+        <div className="mb-8 text-left">
+          <span className="text-[9px] font-mono font-black tracking-widest text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded uppercase">
+            Media Catalog
+          </span>
+          <h2 className="text-xl font-black tracking-tight text-zinc-900 mt-2.5">
+            MEDIA-<span className="text-amber-500 font-mono">ENGINE</span>
           </h2>
         </div>
 
-        {/* Core Media Type Links */}
+        {/* Dynamic Nav Link Generation Vector */}
         <nav className="space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
+          {NAVIGATION_ITEMS.map((item) => {
+            const isActive = activeTab === item.id;
+            const IconComponent = item.icon;
+            
             return (
               <button
                 key={item.id}
+                type="button"
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  activeTab === item.id
-                    ? 'bg-amber-500 text-black shadow-md font-semibold'
-                    : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100'
+                className={`w-full h-11 flex items-center gap-3 px-4 rounded-xl text-xs font-mono font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                  isActive
+                    ? "bg-amber-50 text-amber-800 border-amber-100/70 shadow-2xs"
+                    : "text-zinc-400 hover:text-zinc-900 hover:bg-zinc-50 border-transparent"
                 }`}
               >
-                <Icon className="w-4 h-4" />
-                {item.label}
+                <IconComponent className={`w-4 h-4 shrink-0 transition-transform ${isActive ? "scale-110 stroke-[2.5]" : "opacity-70 stroke-[2]"}`} />
+                <span className="tracking-wide">{item.label}</span>
               </button>
             );
           })}
         </nav>
       </div>
 
-      {/* Premium Migration CTA Option */}
-      <div className="mt-auto pt-4 border-t border-zinc-900">
+      {/* Security Checkpoint and Account Isolation Footer */}
+      <div className="p-4 border-t border-zinc-100 space-y-3 bg-zinc-50/50">
+        {/* Isolated Session Environment Card */}
+        <div className="bg-white border border-zinc-200 rounded-xl p-2.5 flex items-center gap-2 shadow-2xs text-left">
+          <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[8px] font-mono font-black text-zinc-400 uppercase tracking-wider leading-none">
+              Isolated Workspace
+            </p>
+            <p className="text-[10px] font-sans font-semibold text-zinc-700 truncate mt-0.5" title={tenantEmail}>
+              {tenantEmail}
+            </p>
+          </div>
+        </div>
+
+        {/* Premium Migration Action / TV Time Migration */}
         <button
+          type="button"
           onClick={() => setActiveTab('import')}
-          className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all ${
+          className={`w-full h-11 flex items-center justify-center gap-2 px-3 rounded-xl text-[10px] font-mono font-black uppercase tracking-widest border transition-all cursor-pointer shadow-2xs ${
             activeTab === 'import'
-              ? 'bg-zinc-100 text-zinc-950 border-zinc-100'
-              : 'border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
+              ? 'bg-zinc-900 text-white border-zinc-900'
+              : 'bg-white border-amber-200 text-amber-700 hover:bg-amber-50/60 hover:border-amber-300'
           }`}
         >
-          <UploadCloud className="w-4 h-4" />
-          TV Time Migration
+          <UploadCloud className="w-4 h-4 shrink-0 stroke-[2.5]" />
+          <span>Migration Terminal</span>
         </button>
       </div>
     </aside>

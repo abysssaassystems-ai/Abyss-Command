@@ -2,66 +2,96 @@
 
 import React, { useState, useEffect } from "react";
 import { usePlaidLink } from "react-plaid-link";
+import { Landmark, Loader2, AlertCircle } from "lucide-react";
 
 interface PlaidLinkButtonProps {
   userId: string;
   onSuccessSync: () => void;
 }
 
-export default function PlaidLinkButton({ userId, onSuccessSync }: PlaidLinkButtonProps) {
+export default function PlaidLinkButton({ userId, onSuccessSync }: PlaidLinkButtonProps): React.JSX.Element {
   const [linkToken, setLinkToken] = useState<string | null>(null);
-  const [isExchanging, setIsExchanging] = useState(false);
+  const [isExchanging, setIsExchanging] = useState<boolean>(false);
+  const [tenantEmail, setTenantEmail] = useState<string>("");
+  const [authInitialized, setAuthInitialized] = useState<boolean>(false);
 
-  // Initialize and retrieve the single-use Link Token on component mount
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
   useEffect(() => {
+    const session = localStorage.getItem("active_software_user");
+    if (session) {
+      try {
+        const parsed = JSON.parse(session);
+        if (parsed?.email) {
+          setTenantEmail(parsed.email);
+        } else {
+          setTenantEmail("anonymous_isolated");
+        }
+      } catch (err) {
+        console.error("PLAID_AUTH_PARSE_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    } else {
+      setTenantEmail("unauthenticated_session");
+    }
+    setAuthInitialized(true);
+  }, []);
+
+  // Initialize and retrieve the single-use Link Token once tenancy scope is verified
+  useEffect(() => {
+    if (!authInitialized || !tenantEmail) return;
+
     async function initializePlaidLink() {
       try {
         const response = await fetch("/api/plaid/create-link-token", { 
-          method: "POST" 
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenantEmail,
+            userId
+          })
         });
         
-        if (!response.ok) throw new Error("Failed to clear token initialization payload");
+        if (!response.ok) throw new Error("Failed secure link token initialization payload");
         
         const data = await response.json();
         setLinkToken(data.link_token);
       } catch (error) {
-        console.error("Plaid initialization sequence failed:", error);
+        console.error("Plaid isolation initialization sequence failed:", error);
       }
     }
     
     initializePlaidLink();
-  }, []);
+  }, [authInitialized, tenantEmail, userId]);
 
   // Configure the official hook layout from react-plaid-link
   const { open, ready } = usePlaidLink({
     token: linkToken,
-   // ... inside your usePlaidLink configuration block:
-onSuccess: async (public_token, metadata) => {
-    setIsExchanging(true);
-    try {
-      const response = await fetch("/api/plaid/exchange-public-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          public_token,
-          user_id: userId,
-          institution_name: metadata.institution?.name || "Connected Bank",
-        }),
-      });
-  
-      if (response.ok) {
-        onSuccessSync();
-      } else {
-        // READ THE JSON ERROR BODY SENT FROM THE SERVER
-        const errorResponse = await response.json();
-        console.error("❌ TRUE BACKEND CRASH ERROR:", errorResponse);
+    onSuccess: async (public_token, metadata) => {
+      setIsExchanging(true);
+      try {
+        const response = await fetch("/api/plaid/exchange-public-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            public_token,
+            user_id: userId,
+            tenantEmail,
+            institution_name: metadata.institution?.name || "Connected Bank",
+          }),
+        });
+    
+        if (response.ok) {
+          onSuccessSync();
+        } else {
+          const errorResponse = await response.json();
+          console.error("❌ TENANT ENFORCEMENT PLAID EXCHANGE FAILURE:", errorResponse);
+        }
+      } catch (error) {
+        console.error("Fatal exception during network token exchange process:", error);
+      } finally {
+        setIsExchanging(false);
       }
-    } catch (error) {
-      console.error("Fatal exception during network token exchange process:", error);
-    } finally {
-      setIsExchanging(false);
-    }
-  },
+    },
     onExit: (error, metadata) => {
       if (error) {
         console.warn("User exited the Plaid link interface prematurely:", error);
@@ -69,24 +99,33 @@ onSuccess: async (public_token, metadata) => {
     }
   });
 
+  const isInteractionDisabled = !ready || isExchanging || !authInitialized || tenantEmail === "unauthenticated_session";
+
   return (
     <button
       type="button"
       onClick={() => open()}
-      disabled={!ready || isExchanging}
-      className="bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 text-white font-bold text-xs px-5 h-11 rounded-xl transition-all shadow-md shadow-blue-500/10 active:scale-95 disabled:scale-100 disabled:cursor-not-allowed touch-manipulation select-none flex items-center gap-2 shrink-0"
+      disabled={isInteractionDisabled}
+      className={`h-11 px-5 rounded-xl text-xs font-mono font-black uppercase tracking-wider transition-all select-none touch-manipulation flex items-center justify-center gap-2 shrink-0 cursor-pointer border shadow-2xs active:scale-98 disabled:scale-100 disabled:cursor-not-allowed ${
+        isInteractionDisabled
+          ? "bg-gray-100 border-gray-200 text-gray-400"
+          : "bg-blue-600 border-blue-700 text-white hover:bg-blue-700 hover:border-blue-800 shadow-blue-600/10"
+      }`}
     >
       {isExchanging ? (
         <>
-          <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-          <span>Syncing Accounts...</span>
+          <Loader2 className="w-4 h-4 animate-spin text-current stroke-[2.5]" />
+          <span>Syncing Workspace...</span>
+        </>
+      ) : tenantEmail === "unauthenticated_session" ? (
+        <>
+          <AlertCircle className="w-4 h-4 text-red-500 stroke-[2.5]" />
+          <span>Session Locked</span>
         </>
       ) : (
         <>
-          <span>🏦</span> Connect Live Bank Feed
+          <Landmark className="w-4 h-4 text-current stroke-[2.5]" />
+          <span>Connect Live Bank Feed</span>
         </>
       )}
     </button>
