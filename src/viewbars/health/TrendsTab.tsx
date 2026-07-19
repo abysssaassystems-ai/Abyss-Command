@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { FoodLogItem } from "@/app/dashboard/my-apps/health/types";
 import { 
   TrendingUp, 
@@ -8,7 +9,6 @@ import {
   Eye, 
   EyeOff, 
   Calendar, 
-  Layers,
   Scale,
   Flame
 } from "lucide-react";
@@ -19,22 +19,45 @@ interface TrendsTabProps {
 
 export default function TrendsTab({ foodLog }: TrendsTabProps): React.JSX.Element {
   // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
-  const [tenantEmail, setTenantEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
   const [metricOverlay, setMetricOverlay] = useState<boolean>(true);
 
   // Securely resolve active software partition credentials
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Asynchronous token handshake validation pass
+    async function syncTenantSession() {
       try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setTenantEmail(parsed.email);
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
         }
       } catch (err) {
         console.error("TRENDS_AUTH_HYDRATION_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
       }
     }
+    syncTenantSession();
+
+    // 2. Real-time auth subscriber channel connection
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Hardcoded historical baseline telemetry matrix
@@ -93,7 +116,9 @@ export default function TrendsTab({ foodLog }: TrendsTabProps): React.JSX.Elemen
               <Calendar className="w-4 h-4 text-purple-600" />
               <span className="text-xs font-mono font-black text-gray-900 uppercase tracking-wider">Volumetric Metabolic Trace Grid</span>
             </div>
-            <span className="text-[9px] font-mono font-bold text-gray-400 lowercase tracking-normal">// auto-scaling hardware viewport</span>
+            <span className="text-[9px] font-mono font-bold text-gray-400 lowercase tracking-normal">
+              {tenantEmail === "unauthenticated_session" ? "// baseline tracking offline" : "// auto-scaling hardware viewport"}
+            </span>
           </div>
           
           <div className="w-full bg-gray-50/50 rounded-2xl p-4 border border-gray-100 relative">

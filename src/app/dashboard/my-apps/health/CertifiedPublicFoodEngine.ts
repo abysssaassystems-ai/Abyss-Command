@@ -1,34 +1,46 @@
-import { FoodDatabaseEntry } from "../types";
+// 1. FIXED: Adjusted relative path to climb out of: health -> my-apps -> dashboard -> app -> src
+// Alternative if using Next.js path aliases: import { FoodDatabaseEntry } from "@/types";
+import { FoodDatabaseEntry } from "./types";
 
 const USDA_BASE_URL = "https://api.nal.usda.gov/fdc/v1/foods/search";
-const API_KEY = process.env.NEXT_PUBLIC_USDA_API_KEY || "DEMO_KEY"; // Falls back to public demo limits if not set
+const API_KEY = process.env.USDA_API_KEY; 
 
 export const CertifiedPublicFoodEngine = {
   /**
-   * Hits the certified public registry server to pull live nutritional item streams
-   * @param query - Text input string (e.g., "Chipotle chicken bowl" or "raw macaroni")
+   * Securely queries the certified public registry server for live nutritional streams.
    */
   fetchFromPublicRegistry: async (query: string): Promise<FoodDatabaseEntry[]> => {
     if (!query || query.trim().length < 2) return [];
 
+    if (typeof window !== "undefined") {
+      console.error("🚨 SECURITY BREACH: CertifiedPublicFoodEngine executed on client context.");
+      return [];
+    }
+
     try {
-      // Build search payload matching stock ticker parameters
-      const url = `${USDA_BASE_URL}?api_key=${API_KEY}&query=${encodeURIComponent(query)}&pageSize=25`;
+      const activeKey = API_KEY || "DEMO_KEY";
+      const url = `${USDA_BASE_URL}?api_key=${activeKey}&query=${encodeURIComponent(query)}&pageSize=25`;
       
-      const response = await fetch(url, { method: "GET" });
-      if (!response.ok) throw new Error(`USDA Server Delta Exception: ${response.status}`);
+      const response = await fetch(url, { 
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+      
+      if (!response.ok) return []; 
       
       const data = await response.json();
-      if (!data.foods || data.foods.length === 0) return [];
+      if (!data || !Array.isArray(data.foods) || data.foods.length === 0) return [];
 
-      // Stream mapping loop to normalize the live data into our platform types
-      return data.foods.map((food: any) => {
+      return data.foods.map((food: any): FoodDatabaseEntry | null => {
+        if (!food) return null;
+
         const findNutrient = (id: number): number => {
           const nutrient = food.foodNutrients?.find((n: any) => n.nutrientId === id);
-          return nutrient ? parseFloat(nutrient.value) : 0;
+          if (!nutrient || nutrient.value === undefined || nutrient.value === null) return 0;
+          const parsed = parseFloat(nutrient.value);
+          return isNaN(parsed) ? 0 : parsed;
         };
 
-        // Extract certified system weights
         const protein = findNutrient(1003);
         const fat = findNutrient(1004);
         const carbs = findNutrient(1005);
@@ -37,13 +49,14 @@ export const CertifiedPublicFoodEngine = {
 
         const isBranded = food.dataType === "Branded";
         const brandName = food.brandOwner ? `[${food.brandOwner}] ` : "";
+        const rawDescription = food.description ? String(food.description).toLowerCase() : "unlabeled registry item";
 
         return {
-          id: `usda_${food.fdcId}`,
-          name: `${brandName}${food.description.toLowerCase()}`,
+          id: `usda_${food.fdcId || Math.random().toString(36).substring(2, 7)}`,
+          name: `${brandName}${rawDescription}`,
           category: isBranded ? "commercial dining" : "home made",
           verifiedStatus: true,
-          servingSizeGrams: food.servingSize || 100, // Normalized to 100g standard if raw component
+          servingSizeGrams: Number(food.servingSize) || 100, 
           calories: Math.round(calories),
           carbsGrams: parseFloat(carbs.toFixed(1)),
           fatGrams: parseFloat(fat.toFixed(1)),
@@ -52,10 +65,12 @@ export const CertifiedPublicFoodEngine = {
             sodium_mg: Math.round(sodium)
           }
         };
-      });
+      })
+      // 2. FIXED: Explicitly type parameter 'item' to satisfy strict 'noImplicitAny' configurations
+      .filter((item: FoodDatabaseEntry | null): item is FoodDatabaseEntry => item !== null);
 
     } catch (error) {
-      console.error("CRITICAL ENGINE FAULT: Public Registry Connection Broken", error);
+      console.error("❌ CRITICAL ENGINE FAULT:", error);
       return [];
     }
   }

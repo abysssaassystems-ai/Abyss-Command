@@ -1,9 +1,12 @@
 "use client";
-import React, { useState, useEffect } from "react";
+
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import BudgetSidebar from "@/components/nodes/BudgetSidebar";
+import { ShieldAlert, Cpu } from "lucide-react";
 
+// --- SUB-COMPONENT METRIC SHELLS ---
 const HealthTrackerCard = () => (
   <div className="bg-white p-6 flex flex-col justify-between h-full relative z-10 rounded-[23px]">
     <div>
@@ -92,74 +95,143 @@ interface ActiveNode {
 export default function Dashboard(): React.JSX.Element {
   const [deployedNodes, setDeployedNodes] = useState<ActiveNode[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [workspaceName, setWorkspaceName] = useState<string>("Loading...");
+  const [workspaceName, setWorkspaceName] = useState<string>("Loading Workspace...");
+  const [tenantState, setTenantState] = useState<"identifying" | "verified" | "revoked">("identifying");
 
+  // --- REFACTORED ISOLATED DATA STREAM HANDLER ---
+  const fetchDashboardMetrics = useCallback(async (userId: string) => {
+    try {
+      // 1. Pull core account descriptor fields safely
+      const { data: profile } = await supabase
+        .from("apps_and_software_clients")
+        .select("account_name")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (profile?.account_name) {
+        setWorkspaceName(profile.account_name);
+      } else {
+        setWorkspaceName("System Engine Operator");
+      }
+
+      // 2. Load configured node modules bound to this specific token owner
+      const { data: nodes, error } = await supabase
+        .from("user_deployed_nodes")
+        .select("node_id, title")
+        .eq("user_id", userId);
+
+      if (!error && nodes) {
+        setDeployedNodes(nodes.map(n => ({ id: n.node_id, title: n.title })));
+      }
+    } catch (err) {
+      console.error("DASHBOARD_METRICS_FETCH_EXCEPTION:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // --- REAL-TIME RETENTION & TIMEOUT REACTION OBSERVABLE ---
   useEffect(() => {
-    async function initDashboardSession() {
-      try {
-        // 1. Ask Supabase Auth who is currently browsing
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) return;
-
-        // 2. Fetch profile metrics uniquely isolated for this user
-        const { data: profile } = await supabase
-          .from("apps_and_software_clients")
-          .select("account_name")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (profile?.account_name) {
-          setWorkspaceName(profile.account_name);
-        }
-
-        // 3. Fetch user-allocated workspace engine configurations
-        // Note: Make sure your public.user_deployed_nodes table has a user_id column!
-        const { data: nodes, error } = await supabase
-          .from("user_deployed_nodes")
-          .select("node_id, title")
-          .eq("user_id", user.id);
-
-        if (!error && nodes) {
-          setDeployedNodes(nodes.map(n => ({ id: n.node_id, title: n.title })));
-        }
-
-      } catch (err) {
-        console.error("Dashboard ingestion fault:", err);
-      } finally {
+    function evaluateSessionState(user: any) {
+      if (user) {
+        setTenantState("verified");
+        fetchDashboardMetrics(user.id);
+      } else {
+        // Real-Time Memory Purging Sandbox (Phase 3 Safeguard)
+        setTenantState("revoked");
+        setDeployedNodes([]);
+        setWorkspaceName("");
         setIsLoading(false);
       }
     }
 
-    initDashboardSession();
-  }, []);
+    // 1. Initial validation block on component boot
+    async function assertBaselineAccess() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          evaluateSessionState(user);
+        } else {
+          evaluateSessionState(null);
+        }
+      } catch (err) {
+        console.error("BASELINE_IDENT_CHECK_FAULT:", err);
+        evaluateSessionState(null);
+      }
+    }
+    assertBaselineAccess();
 
+    // 2. Active event listener connection tracking auth shifts
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      evaluateSessionState(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [fetchDashboardMetrics]);
+
+  // --- COMPONENT UNDEPLOY MUTATION BLOCK ---
   const handleRemoveNode = async (id: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (tenantState !== "verified") return;
 
-    // Remove the module permanently for this user specifically
-    const { error } = await supabase
-      .from("user_deployed_nodes")
-      .delete()
-      .eq("user_id", user.id)
-      .eq("node_id", id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    if (!error) {
-      setDeployedNodes(prev => prev.filter((node) => node.id !== id));
+      const { error } = await supabase
+        .from("user_deployed_nodes")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("node_id", id);
+
+      if (!error) {
+        setDeployedNodes(prev => prev.filter((node) => node.id !== id));
+      }
+    } catch (err) {
+      console.error("MUTATION_NODE_REMOVAL_EXCEPTION:", err);
     }
   };
 
-  if (isLoading) {
+  // --- VIEW RENDERING INTERCEPT DECK ---
+  if (tenantState === "identifying" || isLoading) {
     return (
-      <div className="min-h-[50vh] flex items-center justify-center font-mono text-xs text-purple-600 tracking-widest animate-pulse">
-        SYNCING WORKSPACE ENGINES...
+      <div className="min-h-[50vh] flex flex-col items-center justify-center font-mono text-xs text-purple-600 tracking-widest gap-2">
+        <Cpu className="w-5 h-5 animate-spin text-purple-500" />
+        <span>SYNCING WORKSPACE ENGINES...</span>
       </div>
     );
   }
 
+  if (tenantState === "revoked") {
+    return (
+      <div className="max-w-xl mx-auto text-center mt-12">
+        <div className="border border-dashed border-rose-200 bg-rose-50/10 rounded-3xl p-8 space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 mx-auto">
+            <ShieldAlert className="w-6 h-6 stroke-[2.2]" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-mono font-black text-gray-900 uppercase tracking-wider">
+              Dashboard Session Terminated
+            </h3>
+            <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
+              Your runtime context token has expired or been purged. Access has been restricted to protect workspace telemetry.
+            </p>
+          </div>
+          <Link
+            href="/login"
+            className="inline-flex h-10 px-5 bg-zinc-950 text-white rounded-xl text-xs font-mono font-black uppercase tracking-wider items-center justify-center hover:bg-zinc-800 transition-all shadow-xs"
+          >
+            Re-Authenticate Session
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // --- SECURED WORKSPACE CANVAS ---
   return (
-    <div className="space-y-6 animate-fadeIn select-none">
+    <div className="space-y-6 select-none">
       
       {/* Title Header Block */}
       <div className="border-b border-gray-100 pb-5">
@@ -180,11 +252,12 @@ export default function Dashboard(): React.JSX.Element {
             {deployedNodes.map((node) => {
               const VisualCard = CATALOGUE_COMPONENTS[node.id];
               return (
-                <div key={node.id} className="p-[1px] bg-gradient-to-br from-purple-600 via-blue-500 to-gray-300 rounded-3xl shadow-md group relative animate-fadeIn transition-all duration-300 hover:shadow-lg">
+                <div key={node.id} className="p-[1px] bg-gradient-to-br from-purple-600 via-blue-500 to-gray-300 rounded-3xl shadow-md group relative transition-all duration-300 hover:shadow-lg">
                   <button 
                     type="button"
+                    disabled={tenantState !== "verified"}
                     onClick={() => handleRemoveNode(node.id)}
-                    className="absolute top-4 right-4 z-20 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 opacity-0 group-hover:opacity-100 transition-all text-[9px] font-bold font-mono uppercase px-2 py-1 rounded-lg"
+                    className="absolute top-4 right-4 z-20 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 opacity-0 group-hover:opacity-100 transition-all text-[9px] font-bold font-mono uppercase px-2 py-1 rounded-lg disabled:cursor-not-allowed"
                   >
                     Undeploy Node
                   </button>

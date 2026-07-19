@@ -18,17 +18,71 @@ export default function BooksTab(): React.JSX.Element {
   const [subTab, setSubTab] = useState<'reading' | 'completed'>('reading');
   const [books, setBooks] = useState<BookItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [userEmail, setUserEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
-  // Ingest authenticated session parameters to isolate user rows
+  // Securely listen to cross-tab authenticated session metadata updates
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (!session) return;
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Resolve initial identity token signature validation pass
+    async function syncTenantSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
+        }
+      } catch (err) {
+        console.error("BOOKS_AUTH_HANDSHAKE_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    }
+    syncTenantSession();
+
+    // 2. Open live synchronized channel observer line for tenant transitions
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Sync historical payload streams upon identity discovery or filter state changes
+  useEffect(() => {
+    const isSecured = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
     
-    const email = JSON.parse(session).email;
-    setUserEmail(email);
-    fetchTenantBooks(email);
-  }, [subTab]);
+    if (isSecured) {
+      fetchTenantBooks(tenantEmail);
+    } else if (tenantEmail !== "authenticating...") {
+      // Apply clean baseline visualization structures for mock unauthenticated contexts
+      applyMockFallback();
+    }
+  }, [tenantEmail, subTab]);
+
+  function applyMockFallback() {
+    setIsLoading(true);
+    if (subTab === 'reading') {
+      setBooks([
+        { id: '1', title: 'Dune', author: 'Frank Herbert', current_page: 340, total_pages: 600, image: 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=300&auto=format&fit=crop&q=60', status: 'reading' },
+        { id: '2', title: 'Atomic Habits', author: 'James Clear', current_page: 110, total_pages: 320, image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=300&auto=format&fit=crop&q=60', status: 'reading' },
+        { id: '3', title: 'Project Hail Mary', author: 'Andy Weir', current_page: 450, total_pages: 476, image: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=300&auto=format&fit=crop&q=60', status: 'reading' },
+      ]);
+    } else {
+      setBooks([]);
+    }
+    setIsLoading(false);
+  }
 
   // Read data rows strictly mapped to this client's profile identity
   async function fetchTenantBooks(email: string) {
@@ -41,22 +95,14 @@ export default function BooksTab(): React.JSX.Element {
         .eq('status', subTab)
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         setBooks(data);
       } else {
-        // Fallback mock payload to preserve layout visualization if database returns clean/empty
-        if (subTab === 'reading') {
-          setBooks([
-            { id: '1', title: 'Dune', author: 'Frank Herbert', current_page: 340, total_pages: 600, image: 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=300&auto=format&fit=crop&q=60', status: 'reading' },
-            { id: '2', title: 'Atomic Habits', author: 'James Clear', current_page: 110, total_pages: 320, image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=300&auto=format&fit=crop&q=60', status: 'reading' },
-            { id: '3', title: 'Project Hail Mary', author: 'Andy Weir', current_page: 450, total_pages: 476, image: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=300&auto=format&fit=crop&q=60', status: 'reading' },
-          ]);
-        } else {
-          setBooks([]);
-        }
+        applyMockFallback();
       }
     } catch (err) {
       console.error("BOOKS_FETCH_EXCEPTION:", err);
+      applyMockFallback();
     } finally {
       setIsLoading(false);
     }
@@ -64,7 +110,8 @@ export default function BooksTab(): React.JSX.Element {
 
   // Secure mutation routine updating book status rows safely under client_email constraints
   const handleMarkAsCompleted = async (bookId: string) => {
-    if (!userEmail) return;
+    const isSecured = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
+    if (!isSecured) return;
 
     // Look up the target book from the local state array to extract its total pages
     const targetedBook = books.find(b => b.id === bookId);
@@ -80,11 +127,11 @@ export default function BooksTab(): React.JSX.Element {
         current_page: targetPages // Safe literal integer pass-through
       })
       .eq('id', bookId)
-      .eq('client_email', userEmail); // Strict user permission filter checks
+      .eq('client_email', tenantEmail); // Strict user permission filter checks
 
     if (error) {
       console.error("DATABASE_MUTATION_FAULT:", error.message);
-      fetchTenantBooks(userEmail); // Wipes back state if query execution fails
+      fetchTenantBooks(tenantEmail); // Reverts layout back to state parity if query execution fails
     }
   };
 
@@ -95,6 +142,7 @@ export default function BooksTab(): React.JSX.Element {
       <div className="flex bg-gray-50 border border-gray-200 p-1 rounded-xl">
         <button
           type="button"
+          disabled={tenantEmail === "authenticating..."}
           onClick={() => setSubTab('reading')}
           className={`flex-1 py-2.5 text-center text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
             subTab === 'reading'
@@ -106,6 +154,7 @@ export default function BooksTab(): React.JSX.Element {
         </button>
         <button
           type="button"
+          disabled={tenantEmail === "authenticating..."}
           onClick={() => setSubTab('completed')}
           className={`flex-1 py-2.5 text-center text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
             subTab === 'completed'
@@ -180,9 +229,10 @@ export default function BooksTab(): React.JSX.Element {
                   {subTab === 'reading' ? (
                     <button 
                       type="button"
+                      disabled={tenantEmail === "unauthenticated_session"}
                       onClick={() => handleMarkAsCompleted(book.id)}
-                      className="p-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-400 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-600 transition-all flex-shrink-0 shadow-sm focus:outline-none"
-                      title="Mark book as fully read"
+                      className="p-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-400 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-600 transition-all flex-shrink-0 shadow-sm focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={tenantEmail === "unauthenticated_session" ? "Login Required" : "Mark book as fully read"}
                     >
                       <BookmarkCheck className="w-5 h-5 stroke-[2.2]" />
                     </button>

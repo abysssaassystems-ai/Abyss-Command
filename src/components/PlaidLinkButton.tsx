@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { usePlaidLink } from "react-plaid-link";
+import { supabase } from "@/lib/supabaseClient";
 import { Landmark, Loader2, AlertCircle } from "lucide-react";
 
 interface PlaidLinkButtonProps {
@@ -17,28 +18,51 @@ export default function PlaidLinkButton({ userId, onSuccessSync }: PlaidLinkButt
 
   // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+      setAuthInitialized(true);
+    }
+
+    // 1. Initial secure token validation signature pass
+    async function verifySession() {
       try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setTenantEmail(parsed.email);
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
         } else {
-          setTenantEmail("anonymous_isolated");
+          handleUserIdentity(null);
         }
       } catch (err) {
-        console.error("PLAID_AUTH_PARSE_EXCEPTION:", err);
+        console.error("PLAID_AUTH_EXCEPTION:", err);
         setTenantEmail("fault_containment_mode");
+        setAuthInitialized(true);
       }
-    } else {
-      setTenantEmail("unauthenticated_session");
     }
-    setAuthInitialized(true);
+    verifySession();
+
+    // 2. Continuous session sync guard
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Initialize and retrieve the single-use Link Token once tenancy scope is verified
   useEffect(() => {
-    if (!authInitialized || !tenantEmail) return;
+    const isInvalidTenant = !tenantEmail || 
+                            tenantEmail === "unauthenticated_session" || 
+                            tenantEmail === "fault_containment_mode";
+
+    if (!authInitialized || isInvalidTenant) return;
 
     async function initializePlaidLink() {
       try {
@@ -92,14 +116,14 @@ export default function PlaidLinkButton({ userId, onSuccessSync }: PlaidLinkButt
         setIsExchanging(false);
       }
     },
-    onExit: (error, metadata) => {
+    onExit: (error, _metadata) => {
       if (error) {
         console.warn("User exited the Plaid link interface prematurely:", error);
       }
     }
   });
 
-  const isInteractionDisabled = !ready || isExchanging || !authInitialized || tenantEmail === "unauthenticated_session";
+  const isInteractionDisabled = !ready || isExchanging || !authInitialized || tenantEmail === "unauthenticated_session" || tenantEmail === "fault_containment_mode";
 
   return (
     <button
@@ -117,7 +141,7 @@ export default function PlaidLinkButton({ userId, onSuccessSync }: PlaidLinkButt
           <Loader2 className="w-4 h-4 animate-spin text-current stroke-[2.5]" />
           <span>Syncing Workspace...</span>
         </>
-      ) : tenantEmail === "unauthenticated_session" ? (
+      ) : (tenantEmail === "unauthenticated_session" || tenantEmail === "fault_containment_mode") ? (
         <>
           <AlertCircle className="w-4 h-4 text-red-500 stroke-[2.5]" />
           <span>Session Locked</span>

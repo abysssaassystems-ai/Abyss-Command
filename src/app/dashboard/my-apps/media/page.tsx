@@ -200,7 +200,7 @@ export default function MediaDashboardPage(): React.JSX.Element {
   if (hasAccess === null) {
     return (
       <div className="min-h-[50vh] flex items-center justify-center font-mono text-xs text-gray-400 uppercase tracking-widest animate-pulse bg-white select-none">
-        // Syncing workspace security keys...
+        Syncing workspace security keys...
       </div>
     );
   }

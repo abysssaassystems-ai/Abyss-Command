@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import { AppWindow, Layers, ExternalLink, ShieldAlert, Cpu } from "lucide-react";
+import { AppWindow, ExternalLink, ShieldAlert, Cpu } from "lucide-react";
 
 interface OwnedApp {
   id: string;
@@ -18,40 +18,16 @@ interface OwnedApp {
     name: string;
     description: string;
     category: string;
-  }[]; // Accounting for array wrapping variations from Supabase relational mappings
+  }[];
 }
 
 export default function MyOwnedAppsPage(): React.JSX.Element {
   const [ownedApps, setOwnedApps] = useState<OwnedApp[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [tenantEmail, setTenantEmail] = useState<string>("resolving session...");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
-  useEffect(() => {
-    async function initializeAssetsContext() {
-      try {
-        // 1. Drop localStorage and pull user metadata securely from active session cookie
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user || !user.email) {
-          setTenantEmail("");
-          setLoading(false);
-          return;
-        }
-
-        setTenantEmail(user.email);
-
-        // 2. Load the authenticated user's authorized software assets
-        await fetchTenantAssets(user.email);
-      } catch (err) {
-        console.error("MY_APPS_HYDRATION_ERROR:", err);
-        setLoading(false);
-      }
-    }
-
-    initializeAssetsContext();
-  }, []);
-
-  async function fetchTenantAssets(email: string) {
+  // --- SECURE ENTITLEMENT DATA FETCH STREAM ---
+  const fetchTenantAssets = useCallback(async (email: string) => {
     try {
       const { data, error } = await supabase
         .from("client_owned_apps")
@@ -70,25 +46,111 @@ export default function MyOwnedAppsPage(): React.JSX.Element {
 
       if (error) {
         console.error("DATABASE_ASSET_FETCH_ERR:", error.message);
+        setOwnedApps([]);
       } else if (data) {
         setOwnedApps(data as any[]);
       }
     } catch (err) {
       console.error("ASSET_FETCH_EXCEPTION:", err);
+      setOwnedApps([]);
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // --- REAL-TIME SECURITY SUBSCRIPTION SENTINEL ---
+  useEffect(() => {
+    function handleSessionShift(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+        fetchTenantAssets(user.email);
+      } else {
+        // Instant data clearance protection block (Phase 3 Mitigation)
+        setTenantEmail("unauthenticated_session");
+        setOwnedApps([]);
+        setLoading(false);
+      }
+    }
+
+    // 1. Establish baseline verification on mount
+    async function executeInitialHandshake() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleSessionShift(user);
+        } else {
+          handleSessionShift(null);
+        }
+      } catch (err) {
+        console.error("SECURE_ASSET_HANDSHAKE_EXCEPTION:", err);
+        handleSessionShift(null);
+      }
+    }
+    executeInitialHandshake();
+
+    // 2. Open active websocket channel for real-time validation tracking
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleSessionShift(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [fetchTenantAssets]);
+
+  const isSecuredTenant = tenantEmail && !["authenticating...", "unauthenticated_session"].includes(tenantEmail);
+
+  // --- VIEW RENDER SECURITY ROUTING DECK (EARLY RETURNS) ---
+  if (tenantEmail === "authenticating...") {
+    return (
+      <div className="h-64 border border-dashed border-zinc-200 rounded-2xl flex flex-col items-center justify-center text-zinc-400 font-mono text-xs gap-2 m-10">
+        <Cpu className="w-5 h-5 animate-spin text-zinc-500" />
+        <span>Synchronizing client entitlement nodes...</span>
+      </div>
+    );
   }
 
+  if (tenantEmail === "unauthenticated_session") {
+    return (
+      <div className="p-6 md:p-10 max-w-xl mx-auto text-center mt-12">
+        <div className="border border-dashed border-rose-200 bg-rose-50/10 rounded-3xl p-8 space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 mx-auto">
+            <ShieldAlert className="w-6 h-6 stroke-[2.2]" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-mono font-black text-gray-900 uppercase tracking-wider">
+              Entitlement Scope Terminated
+            </h3>
+            <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
+              Your active authorization credential token has expired or been revoked. View access locked.
+            </p>
+          </div>
+          <Link
+            href="/login"
+            className="inline-flex h-10 px-5 bg-zinc-950 text-white rounded-xl text-xs font-mono font-black uppercase tracking-wider items-center justify-center hover:bg-zinc-800 transition-all shadow-xs"
+          >
+            Re-Authenticate Session
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // --- MAIN AUTHENTICATED WORKSPACE CANVAS ---
   return (
     <main className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 text-left min-h-screen bg-white">
       
       {/* Structural Section Header */}
       <div className="border-b border-zinc-200 pb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <span className="text-[10px] font-mono font-black text-zinc-400 uppercase tracking-widest block">
-            Client Asset Control Matrix
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono font-black text-zinc-400 uppercase tracking-widest block">
+              Client Asset Control Matrix
+            </span>
+            <span className="text-[8px] font-mono bg-emerald-50 border border-emerald-200 text-emerald-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-tight">
+              Isolated
+            </span>
+          </div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 font-sans mt-1">
             My Apps & Software
           </h1>
@@ -104,7 +166,7 @@ export default function MyOwnedAppsPage(): React.JSX.Element {
       {loading ? (
         <div className="h-64 border border-dashed border-zinc-200 rounded-2xl flex flex-col items-center justify-center text-zinc-400 font-mono text-xs gap-2">
           <Cpu className="w-5 h-5 animate-spin text-zinc-400" />
-          <span>Synchronizing client entitlement nodes...</span>
+          <span>Refreshing secure schema arrays...</span>
         </div>
       ) : ownedApps.length === 0 ? (
         <div className="border border-zinc-200 rounded-2xl p-12 text-center max-w-xl mx-auto space-y-4">
@@ -114,7 +176,7 @@ export default function MyOwnedAppsPage(): React.JSX.Element {
           <div className="space-y-1">
             <h3 className="text-sm font-bold text-zinc-900">No software assets mapped</h3>
             <p className="text-xs text-zinc-500 max-w-xs mx-auto">
-              This tenant endpoint ({tenantEmail || "anonymous"}) has no active software provisions attached.
+              This tenant endpoint ({tenantEmail}) has no active software provisions attached.
             </p>
           </div>
           <Link
@@ -127,7 +189,6 @@ export default function MyOwnedAppsPage(): React.JSX.Element {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {ownedApps.map((asset) => {
-            // Safe extraction block handling both object data shapes and single-element array maps
             const details = Array.isArray(asset.app_catalogue)
               ? asset.app_catalogue[0]
               : asset.app_catalogue;
@@ -168,7 +229,8 @@ export default function MyOwnedAppsPage(): React.JSX.Element {
 
                   <button
                     type="button"
-                    className="w-full h-11 border border-zinc-200 text-zinc-900 text-xs font-mono font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 hover:bg-zinc-950 hover:text-white"
+                    disabled={!isSecuredTenant}
+                    className="w-full h-11 border border-zinc-200 text-zinc-900 text-xs font-mono font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 hover:bg-zinc-950 hover:text-white disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-900 disabled:cursor-not-allowed"
                   >
                     <span>Launch Module</span>
                     <ExternalLink className="w-3.5 h-3.5" />

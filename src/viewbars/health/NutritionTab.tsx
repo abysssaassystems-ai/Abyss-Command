@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { FoodDatabaseEntry, MealType, FoodLogItem } from "@/app/dashboard/my-apps/health/types";
 import { CertifiedPublicFoodEngine } from "@/app/dashboard/my-apps/health/CertifiedPublicFoodEngine";
 import { 
@@ -9,13 +10,9 @@ import {
   Search, 
   Droplets, 
   Moon, 
-  Utensils, 
   Trash2, 
   Loader2, 
-  Calculator, 
-  Target, 
-  Zap,
-  TrendingUp
+  Utensils
 } from "lucide-react";
 
 interface NutritionTabProps {
@@ -25,7 +22,7 @@ interface NutritionTabProps {
 
 export default function NutritionTab({ foodLog, setFoodLog }: NutritionTabProps): React.JSX.Element {
   // --- MULTI-TENANT SECURE AUTHENTICATION MATRIX HANDSHAKE ---
-  const [tenantEmail, setTenantEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
   const [activeSearchMeal, setActiveSearchMeal] = useState<MealType | null>(null);
 
   // Lifestyle Tracking States partitioned by tenant context
@@ -46,34 +43,64 @@ export default function NutritionTab({ foodLog, setFoodLog }: NutritionTabProps)
 
   // Hydrate tenant credentials and sync decoupled metrics securely
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+        
+        // Hydrate client state metrics from active verified configuration space partitions
+        const storedWater = localStorage.getItem(`nutrition_water_${user.email}`);
+        const storedSleep = localStorage.getItem(`nutrition_sleep_${user.email}`);
+        if (storedWater) setWaterOunces(Number(storedWater));
+        if (storedSleep) setSleepHours(Number(storedSleep));
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Core asynchronous verification signature pass
+    async function syncTenantSession() {
       try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setTenantEmail(parsed.email);
-          
-          // Hydrate client state metrics from active configuration space partitions
-          const storedWater = localStorage.getItem(`nutrition_water_${parsed.email}`);
-          const storedSleep = localStorage.getItem(`nutrition_sleep_${parsed.email}`);
-          if (storedWater) setWaterOunces(Number(storedWater));
-          if (storedSleep) setSleepHours(Number(storedSleep));
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
         }
       } catch (err) {
         console.error("NUTRITION_AUTH_HYDRATION_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
       }
     }
+    syncTenantSession();
+
+    // 2. Continuous real-time subscription channel stream context sync
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  // Helper macro check to validate if security boundary context is actively ready
+  const isSecuredTenant = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
 
   // Sync state loops to client storage boundaries safely
   const updateWaterPartition = (val: number) => {
     setWaterOunces(val);
-    if (tenantEmail) localStorage.setItem(`nutrition_water_${tenantEmail}`, val.toString());
+    if (isSecuredTenant) {
+      localStorage.setItem(`nutrition_water_${tenantEmail}`, val.toString());
+    }
   };
 
   const updateSleepPartition = (val: number) => {
     setSleepHours(val);
-    if (tenantEmail) localStorage.setItem(`nutrition_sleep_${tenantEmail}`, val.toString());
+    if (isSecuredTenant) {
+      localStorage.setItem(`nutrition_sleep_${tenantEmail}`, val.toString());
+    }
   };
 
   // Debounced query lookups tracking high-frequency dataset arrays
@@ -118,14 +145,14 @@ export default function NutritionTab({ foodLog, setFoodLog }: NutritionTabProps)
   // --- MATHEMATICAL EQUATION MODEL METRICS ---
   const budgetTargetCals = 1693;
   const totalCalories = foodLog.reduce((acc, item) => acc + item.calories, 0);
-  const totalProtein = foodLog.reduce((acc, item) => acc + item.protein, 0);
-  const totalCarbs = foodLog.reduce((acc, item) => acc + item.carbs, 0);
-  const totalFats = foodLog.reduce((acc, item) => acc + item.fats, 0);
+  const totalProtein = foodLog.reduce((acc, item) => acc + item.proteinGrams, 0);
+  const totalCarbs = foodLog.reduce((acc, item) => acc + item.carbsGrams, 0);
+  const totalFats = foodLog.reduce((acc, item) => acc + item.fatGrams, 0);
   const caloriesRemaining = budgetTargetCals - totalCalories;
 
   const handleLogFood = (e: React.FormEvent, mealType: MealType) => {
     e.preventDefault();
-    if (!foodName) return;
+    if (!foodName || tenantEmail === "unauthenticated_session") return;
 
     const p = Number(proteinIn) || 0;
     const c = Number(carbsIn) || 0;
@@ -138,9 +165,9 @@ export default function NutritionTab({ foodLog, setFoodLog }: NutritionTabProps)
         id: Date.now().toString(),
         name: foodName,
         servingText: servingInput || "1 Serving",
-        protein: p,
-        carbs: c,
-        fats: f,
+        proteinGrams: p,
+        carbsGrams: c,
+        fatGrams: f,
         calories: finalCals,
         mealType: mealType,
       },
@@ -223,19 +250,20 @@ export default function NutritionTab({ foodLog, setFoodLog }: NutritionTabProps)
               </h3>
             </div>
           </div>
-          {/* Strictly verified 44px global touch target frame bounds */}
           <div className="flex gap-1 shrink-0 select-none">
             <button 
               type="button"
+              disabled={tenantEmail === "unauthenticated_session"}
               onClick={() => updateWaterPartition(Math.max(0, waterOunces - 8))} 
-              className="bg-gray-50 border border-gray-200 text-gray-500 font-black w-11 h-11 rounded-xl hover:bg-gray-100 active:scale-95 transition-all cursor-pointer flex items-center justify-center text-sm"
+              className="bg-gray-50 border border-gray-200 text-gray-500 font-black w-11 h-11 rounded-xl hover:bg-gray-100 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-sm cursor-pointer"
             >
               -
             </button>
             <button 
               type="button"
+              disabled={tenantEmail === "unauthenticated_session"}
               onClick={() => updateWaterPartition(waterOunces + 8)} 
-              className="bg-purple-600 text-white font-mono font-black text-[10px] uppercase px-3 h-11 rounded-xl hover:bg-purple-700 active:scale-95 transition-all cursor-pointer flex items-center justify-center min-w-[54px] tracking-wider"
+              className="bg-purple-600 text-white font-mono font-black text-[10px] uppercase px-3 h-11 rounded-xl hover:bg-purple-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center min-w-[54px] tracking-wider cursor-pointer"
             >
               +8 oz
             </button>
@@ -261,10 +289,11 @@ export default function NutritionTab({ foodLog, setFoodLog }: NutritionTabProps)
               step="0.5"
               min="0"
               max="24"
+              disabled={tenantEmail === "unauthenticated_session"}
               value={sleepHours || ""} 
               onChange={(e) => updateSleepPartition(parseFloat(e.target.value) || 0)}
               placeholder="0.0"
-              className="w-12 bg-transparent border-none font-mono font-black text-sm text-gray-800 outline-none text-center p-0 focus:ring-0 tabular-nums"
+              className="w-12 bg-transparent border-none font-mono font-black text-sm text-gray-800 outline-none text-center p-0 focus:ring-0 tabular-nums disabled:opacity-40 disabled:cursor-not-allowed"
             />
           </div>
         </div>
@@ -320,10 +349,11 @@ export default function NutritionTab({ foodLog, setFoodLog }: NutritionTabProps)
                         type="text" 
                         required
                         autoFocus
-                        placeholder="Query central nutritional logs (e.g. Avocado, Basmati Oats)..." 
+                        disabled={tenantEmail === "unauthenticated_session"}
+                        placeholder={tenantEmail === "unauthenticated_session" ? "Session locked" : "Query central nutritional logs (e.g. Avocado, Basmati Oats)..."}
                         value={foodName}
                         onChange={(e) => setFoodName(e.target.value)}
-                        className="w-full bg-transparent py-3 text-sm font-semibold text-gray-800 placeholder-gray-300 outline-none" 
+                        className="w-full bg-transparent py-3 text-sm font-semibold text-gray-800 placeholder-gray-300 outline-none disabled:opacity-50" 
                       />
                       {isSearching && (
                         <Loader2 className="w-4 h-4 text-purple-600 animate-spin shrink-0 select-none ml-2" />
@@ -354,32 +384,32 @@ export default function NutritionTab({ foodLog, setFoodLog }: NutritionTabProps)
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
                       <div>
                         <label className="text-[9px] text-gray-400 block mb-1">Serving Frame Reference</label>
-                        <input type="text" placeholder="e.g. 1 Container, 150g" value={servingInput} onChange={(e) => setServingInput(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 font-sans font-medium outline-none focus:border-purple-500 normal-case text-gray-800" />
+                        <input type="text" disabled={tenantEmail === "unauthenticated_session"} placeholder="e.g. 1 Container, 150g" value={servingInput} onChange={(e) => setServingInput(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 font-sans font-medium outline-none focus:border-purple-500 normal-case text-gray-800 disabled:opacity-40" />
                       </div>
                       <div>
                         <label className="text-[9px] text-gray-400 block mb-1">Absolute Calories</label>
-                        <input type="number" step="any" placeholder="0" value={caloriesIn} onChange={(e) => setCaloriesIn(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 font-bold text-purple-600 outline-none focus:border-purple-500 tabular-nums" />
+                        <input type="number" step="any" disabled={tenantEmail === "unauthenticated_session"} placeholder="0" value={caloriesIn} onChange={(e) => setCaloriesIn(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 font-bold text-purple-600 outline-none focus:border-purple-500 tabular-nums disabled:opacity-40" />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="text-[9px] text-gray-400 block mb-1 text-center">Protein (g)</label>
-                        <input type="number" step="any" placeholder="0" value={proteinIn} onChange={(e) => setProteinIn(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl py-2 text-center font-bold text-blue-600 outline-none focus:border-purple-500 tabular-nums" />
+                        <input type="number" step="any" disabled={tenantEmail === "unauthenticated_session"} placeholder="0" value={proteinIn} onChange={(e) => setProteinIn(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl py-2 text-center font-bold text-blue-600 outline-none focus:border-purple-500 tabular-nums disabled:opacity-40" />
                       </div>
                       <div>
                         <label className="text-[9px] text-gray-400 block mb-1 text-center">Carbs (g)</label>
-                        <input type="number" step="any" placeholder="0" value={carbsIn} onChange={(e) => setCarbsIn(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl py-2 text-center font-bold text-purple-600 outline-none focus:border-purple-500 tabular-nums" />
+                        <input type="number" step="any" disabled={tenantEmail === "unauthenticated_session"} placeholder="0" value={carbsIn} onChange={(e) => setCarbsIn(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl py-2 text-center font-bold text-purple-600 outline-none focus:border-purple-500 tabular-nums disabled:opacity-40" />
                       </div>
                       <div>
                         <label className="text-[9px] text-gray-400 block mb-1 text-center">Fats (g)</label>
-                        <input type="number" step="any" placeholder="0" value={fatsIn} onChange={(e) => setFatsIn(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl py-2 text-center font-bold text-amber-600 outline-none focus:border-purple-500 tabular-nums" />
+                        <input type="number" step="any" disabled={tenantEmail === "unauthenticated_session"} placeholder="0" value={fatsIn} onChange={(e) => setFatsIn(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl py-2 text-center font-bold text-amber-600 outline-none focus:border-purple-500 tabular-nums disabled:opacity-40" />
                       </div>
                     </div>
 
                     <div className="flex justify-end pt-1">
-                      <button type="submit" className="w-full sm:w-auto bg-gray-900 hover:bg-gray-800 text-white font-mono font-black uppercase tracking-wider text-[10px] px-6 h-11 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center">
-                        Commit To Local Log
+                      <button type="submit" disabled={tenantEmail === "unauthenticated_session"} className="w-full sm:w-auto bg-gray-900 hover:bg-gray-800 text-white font-mono font-black uppercase tracking-wider text-[10px] px-6 h-11 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed">
+                        {tenantEmail === "unauthenticated_session" ? "Console Locked" : "Commit To Local Log"}
                       </button>
                     </div>
                   </form>
@@ -401,9 +431,9 @@ export default function NutritionTab({ foodLog, setFoodLog }: NutritionTabProps)
                         <div className="flex items-center flex-wrap gap-x-2 text-[10px] text-gray-400 mt-1 font-mono font-bold uppercase tracking-wider tabular-nums">
                           <span className="truncate max-w-[120px] font-sans font-medium normal-case text-gray-500">{item.servingText}</span>
                           <span className="text-gray-200 select-none">•</span>
-                          <span className="text-blue-600">P: {item.protein}g</span>
-                          <span className="text-purple-600">C: {item.carbs}g</span>
-                          <span className="text-amber-600">F: {item.fats}g</span>
+                          <span className="text-blue-600">P: {item.proteinGrams}g</span>
+                          <span className="text-purple-600">C: {item.carbsGrams}g</span>
+                          <span className="text-amber-600">F: {item.fatGrams}g</span>
                         </div>
                       </div>
                       

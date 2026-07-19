@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = 'force-dynamic';
+
+// Initialize a server-safe configuration instance to verify incoming tokens safely
+const supabaseServer = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 // 🎬 TMDB Standard Numeric Genre IDs Mapping Array
 const TMDB_GENRE_MAP: Record<string, number> = {
@@ -45,16 +52,38 @@ const BOOK_GENRE_MAP: Record<string, string> = {
 };
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const type = searchParams.get('type') || 'movie'; // Default cleanly to movie path
-  const genre = searchParams.get('genre') || 'action'; // Default cleanly to action path
-  const year = searchParams.get('year') || 'all';
-  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
-
   try {
+    // 1. EXTRACT AND VERIFY CLIENT AUTHORIZATION TOKEN (Phase 2 & 3 Guard)
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
+
+    if (!token) {
+      return NextResponse.json(
+        { error: "Missing identity validation token." },
+        { status: 401 }
+      );
+    }
+
+    // Authenticate the token directly against the Supabase Auth engine
+    const { data: { user }, error: authError } = await supabaseServer.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Authorization credentials invalid or expired." },
+        { status: 401 }
+      );
+    }
+
+    // 2. PARSE AND SANITIZE PARAMS AFTER SUCCESSFUL AUTH
+    const { searchParams } = new URL(request.url);
+    const type = searchParams.get('type') || 'movie'; 
+    const genre = searchParams.get('genre') || 'action'; 
+    const year = searchParams.get('year') || 'all';
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+
     let results: any[] = [];
 
-    // Clean, direct routing pathways that never mix pipelines
+    // Clean routing pathways that never mix pipelines
     switch (type) {
       case 'movie':
       case 'tv':
@@ -70,10 +99,14 @@ export async function GET(request: NextRequest) {
         results = await discoverTMDB('movie', genre, year, page);
     }
 
-    return NextResponse.json({ results });
+    return NextResponse.json({ success: true, results });
+
   } catch (error: any) {
     console.error('🚨 TAXONOMY ROUTER DISPATCH FAILURE:', error.message);
-    return NextResponse.json({ error: 'Internal Stream Failure', results: [] }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Internal pipeline processing failure.', results: [] }, 
+      { status: 500 }
+    );
   }
 }
 
@@ -84,8 +117,10 @@ async function discoverTMDB(category: 'movie' | 'tv', genre: string, year: strin
   let url = `https://api.themoviedb.org/3/discover/${category}?api_key=${apiKey}&language=en-US&sort_by=popularity.desc&page=${page}&include_adult=false`;
 
   if (year !== 'all' && year.trim() !== '') {
+    // Basic structural alpha-numeric cleaning to prevent query-injection mutations
+    const sanitizedYear = year.replace(/[^0-4a-zA-Z_-]/g, '').trim();
     const yearParam = category === 'movie' ? 'primary_release_year' : 'first_air_date_year';
-    url += `&${yearParam}=${year.trim()}`;
+    url += `&${yearParam}=${sanitizedYear}`;
   }
   
   if (TMDB_GENRE_MAP[genre]) {
@@ -111,6 +146,9 @@ async function discoverIGDB(genre: string, year: string, page: number) {
   
   try {
     const authUrl = `https://id.twitch.tv/oauth2/token?client_id=${process.env.TWITCH_CLIENT_ID}&client_secret=${process.env.TWITCH_CLIENT_SECRET}&grant_type=client_credentials`;
+    
+    // NOTE: For better performance in production, cache this token in Redis or memory 
+    // instead of generating a new one on every request.
     const authRes = await fetch(authUrl, { method: 'POST' });
     if (!authRes.ok) return [];
     const authData = await authRes.json();
@@ -121,9 +159,11 @@ async function discoverIGDB(genre: string, year: string, page: number) {
 
     if (year !== 'all' && year.trim() !== '') {
       const targetYear = parseInt(year.trim(), 10);
-      const startUnix = Math.floor(new Date(`${targetYear}-01-01T00:00:00Z`).getTime() / 1000);
-      const endUnix = Math.floor(new Date(`${targetYear}-12-31T23:59:59Z`).getTime() / 1000);
-      queryConditions += ` & first_release_date >= ${startUnix} & first_release_date <= ${endUnix}`;
+      if (!isNaN(targetYear)) {
+        const startUnix = Math.floor(new Date(`${targetYear}-01-01T00:00:00Z`).getTime() / 1000);
+        const endUnix = Math.floor(new Date(`${targetYear}-12-31T23:59:59Z`).getTime() / 1000);
+        queryConditions += ` & first_release_date >= ${startUnix} & first_release_date <= ${endUnix}`;
+      }
     }
     
     if (IGDB_GENRE_MAP[genre]) {
@@ -165,7 +205,8 @@ async function discoverBooks(genre: string, year: string, page: number) {
   let searchTerms = `subject:${genreQuery}`;
   
   if (year !== 'all' && year.trim() !== '') {
-    searchTerms += `+intitle:${year.trim()}`;
+    const sanitizedYear = year.replace(/[^0-4a-zA-Z_-]/g, '').trim();
+    searchTerms += `+intitle:${sanitizedYear}`;
   }
 
   const limit = 20;

@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
@@ -24,24 +25,21 @@ export default function ForgotInfoRecovery(): React.JSX.Element {
     setStatusMsg(null);
 
     try {
-      // Lookup email against registered login table to verify existence
-      const { data, error } = await supabase
-        .from("web_login_users")
-        .select("account_name, username")
-        .eq("email", email)
-        .maybeSingle();
+      // Establish clean client origin path for the recovery redirect routing target
+      const targetRedirectUrl = `${window.location.origin}/web-login/update-password`;
+
+      // 1. SECURE DISPATCH: Offload validation and communication completely to Supabase Auth
+      // Note: Supabase natively absorbs unknown emails silently to prevent malicious user enumeration scans.
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: targetRedirectUrl,
+      });
 
       if (error) {
-        setStatusMsg({ type: "error", msg: `LOOKUP_ERROR: ${error.message}` });
+        setStatusMsg({ type: "error", msg: `RECOVERY_FAULT: ${error.message}` });
         return;
       }
 
-      if (!data) {
-        setStatusMsg({ type: "error", msg: "No account found matching that email address in our system." });
-        return;
-      }
-
-      // If successful, move to the final confirmation screen
+      // 2. SUCCESSFUL TRANSITION: Advance to confirmation phase
       setStep(3);
     } catch (err: any) {
       setStatusMsg({ type: "error", msg: `EXCEPTION: ${err.message || err}` });
@@ -122,7 +120,9 @@ export default function ForgotInfoRecovery(): React.JSX.Element {
         {step === 2 && (
           <form onSubmit={handleRecoverySubmit} className="space-y-5 animate-fadeIn">
             <p className="text-xs text-gray-500 font-sans text-center">
-              Please enter the email address associated with your workspace account to verify your identity.
+              {recoveryType === "username" 
+                ? "Enter your registered email address. We will verify your account status and provide systemic restoration data loops."
+                : "Please enter the email address associated with your workspace account to verify your identity."}
             </p>
 
             <div className="space-y-1.5">
@@ -162,7 +162,9 @@ export default function ForgotInfoRecovery(): React.JSX.Element {
                 Recovery Initiated
               </h3>
               <p className="text-xs text-gray-600 leading-relaxed max-w-[280px] mx-auto bg-gray-50 p-4 rounded-xl border border-gray-200">
-                A secure reset sequence has been generated. <strong className="text-gray-900 block mt-2">The reset instructions and secure link will be sent directly from Supabase.</strong> Please disregard any other reset emails.
+                {recoveryType === "username" 
+                  ? "An encrypted access token routing sequence has been generated. Use the email-link authentication parameters to log in natively, where your account profile username parameters can be securely reassigned inside the dashboard command center." 
+                  : "A secure reset sequence has been generated. The reset instructions and secure link will be sent directly from Supabase. Please disregard any other reset emails."}
               </p>
             </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { FoodLogItem } from "@/app/dashboard/my-apps/health/types";
 
 import { 
@@ -19,44 +20,66 @@ interface OverviewTabProps {
 
 export default function OverviewTab({ 
   foodLog, 
-  setFoodLog, 
   targetCalories 
 }: OverviewTabProps): React.JSX.Element {
   // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
-  const [tenantEmail, setTenantEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
   const [waterOunces, setWaterOunces] = useState<number>(48);
-  const [sleepHours, setSleepHours] = useState<number>(7.5);
+  const [, setSleepHours] = useState<number>(7.5);
 
   // Securely load active tenant contextual parameters
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+        
+        // Cross-tab verification synchronization for localized user metrics
+        const storedWater = localStorage.getItem(`nutrition_water_${user.email}`);
+        const storedSleep = localStorage.getItem(`nutrition_sleep_${user.email}`);
+        if (storedWater) setWaterOunces(Number(storedWater));
+        if (storedSleep) setSleepHours(Number(storedSleep));
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Core token authentication check pass
+    async function syncTenantSession() {
       try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setTenantEmail(parsed.email);
-          
-          // Cross-tab fallback synchronization for user metrics
-          const storedWater = localStorage.getItem(`nutrition_water_${parsed.email}`);
-          const storedSleep = localStorage.getItem(`nutrition_sleep_${parsed.email}`);
-          if (storedWater) setWaterOunces(Number(storedWater));
-          if (storedSleep) setSleepHours(Number(storedSleep));
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
         }
       } catch (err) {
         console.error("OVERVIEW_AUTH_HYDRATION_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
       }
     }
+    syncTenantSession();
+
+    // 2. Open live listener line for rapid user switching or token invalidation
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const currentCalorieTotal = foodLog.reduce((acc, item) => acc + item.calories, 0);
+  const isSecuredTenant = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
 
   // Action Handlers backed by Secure Multi-Tenant Boundaries
   const quickHydrate = (amount: number) => {
+    if (!isSecuredTenant) return;
     const updatedWater = waterOunces + amount;
     setWaterOunces(updatedWater);
-    if (tenantEmail) {
-      localStorage.setItem(`nutrition_water_${tenantEmail}`, updatedWater.toString());
-    }
+    localStorage.setItem(`nutrition_water_${tenantEmail}`, updatedWater.toString());
   };
 
   // --- CHRONOLOGICAL DATA INTERCEPT TIMELINE GENERATOR ---
@@ -145,15 +168,17 @@ export default function OverviewTab({
           <div className="flex gap-1.5 mt-4 select-none font-mono text-[9px] font-black uppercase tracking-wider">
             <button 
               type="button"
+              disabled={tenantEmail === "unauthenticated_session"}
               onClick={() => quickHydrate(8)} 
-              className="bg-gray-50 border border-gray-200 hover:border-gray-300 text-gray-700 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer flex-1 shadow-xs"
+              className="bg-gray-50 border border-gray-200 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed text-gray-700 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer flex-1 shadow-xs"
             >
               +8 oz
             </button>
             <button 
               type="button"
+              disabled={tenantEmail === "unauthenticated_session"}
               onClick={() => quickHydrate(16)} 
-              className="bg-purple-600 border border-purple-700 text-white px-2.5 py-1.5 rounded-lg hover:bg-purple-700 transition-colors cursor-pointer flex-1 shadow-xs"
+              className="bg-purple-600 border border-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-2.5 py-1.5 rounded-lg hover:bg-purple-700 transition-colors cursor-pointer flex-1 shadow-xs"
             >
               +16 oz
             </button>

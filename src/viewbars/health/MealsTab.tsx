@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { FoodDatabaseEntry } from "@/app/dashboard/my-apps/health/types";
 import { CertifiedPublicFoodEngine } from "@/app/dashboard/my-apps/health/CertifiedPublicFoodEngine";
 import { 
@@ -10,14 +11,12 @@ import {
   Loader2, 
   X, 
   Utensils, 
-  Calculator, 
-  Bookmark, 
   Info 
 } from "lucide-react";
 
 export default function MealsTab(): React.JSX.Element {
   // --- MULTI-TENANT ARCHITECTURE HANDSHAKE ---
-  const [tenantEmail, setTenantEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
   const [searchQuery, setSearchQuery] = useState("");
   const [items, setItems] = useState<FoodDatabaseEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -28,28 +27,61 @@ export default function MealsTab(): React.JSX.Element {
 
   // Securely fetch tenant credentials and look up saved macro parameters
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
-      try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setTenantEmail(parsed.email);
-          // Hydrate isolated tenant-specific configuration profiles
-          const savedFavs = localStorage.getItem(`macro_favs_${parsed.email}`);
-          if (savedFavs) {
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+        // Hydrate isolated tenant-specific configuration profiles cleanly from local partitions
+        const savedFavs = localStorage.getItem(`macro_favs_${user.email}`);
+        if (savedFavs) {
+          try {
             setFavorites(JSON.parse(savedFavs));
+          } catch (parseErr) {
+            console.error("MEALS_FAVORITES_PARSE_EXCEPTION:", parseErr);
+            setFavorites([]);
           }
+        } else {
+          setFavorites([]);
+        }
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+        setFavorites([]);
+      } else {
+        setTenantEmail("unauthenticated_session");
+        setFavorites([]);
+      }
+    }
+
+    // 1. Core asynchronous verification handshake
+    async function syncTenantSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
         }
       } catch (err) {
         console.error("MEALS_AUTH_HYDRATION_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
       }
     }
+    syncTenantSession();
+
+    // 2. Real-time auth state subscription line connection
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Sync isolated tenant favorites back onto client local space configuration rules
   const saveFavoritesToPartition = (updatedFavs: FoodDatabaseEntry[]) => {
     setFavorites(updatedFavs);
-    if (tenantEmail) {
+    const isSecuredTenant = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
+    if (isSecuredTenant) {
       localStorage.setItem(`macro_favs_${tenantEmail}`, JSON.stringify(updatedFavs));
     }
   };
@@ -155,7 +187,10 @@ export default function MealsTab(): React.JSX.Element {
             <button
               type="button"
               onClick={() => setFilterFavorites(true)}
-              className={`px-4 py-2 rounded-xl border flex items-center gap-1.5 transition-all h-9 cursor-pointer shadow-xs ${
+              disabled={tenantEmail === "unauthenticated_session"}
+              className={`px-4 py-2 rounded-xl border flex items-center gap-1.5 transition-all h-9 shadow-xs disabled:opacity-40 ${
+                tenantEmail === "unauthenticated_session" ? "cursor-not-allowed" : "cursor-pointer"
+              } ${
                 filterFavorites
                   ? "bg-blue-600 text-white border-blue-600 font-black"
                   : "bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100"
@@ -202,7 +237,10 @@ export default function MealsTab(): React.JSX.Element {
                     <button
                       type="button"
                       onClick={() => toggleFavorite(food)}
-                      className={`w-11 h-11 rounded-xl flex items-center justify-center border transition-all active:scale-90 cursor-pointer shadow-xs shrink-0 ${
+                      disabled={tenantEmail === "unauthenticated_session"}
+                      className={`w-11 h-11 rounded-xl flex items-center justify-center border transition-all active:scale-90 shadow-xs shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                        tenantEmail !== "unauthenticated_session" ? "cursor-pointer" : ""
+                      } ${
                         isFavorited 
                           ? "text-blue-600 bg-blue-50/50 border-blue-200" 
                           : "text-gray-300 bg-gray-50 border-gray-100 hover:text-gray-400"
@@ -228,7 +266,7 @@ export default function MealsTab(): React.JSX.Element {
                     </div>
                   </div>
 
-                  {/* Right Metric Block Layout (High-Contrast Corporate Alignment) */}
+                  {/* Right Metric Block Layout */}
                   <div className="flex items-center gap-4 shrink-0 font-mono text-[10px]">
                     
                     {/* Modular breakdown tags */}

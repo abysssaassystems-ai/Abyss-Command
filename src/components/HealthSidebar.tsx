@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, 
   Apple, 
@@ -9,7 +10,6 @@ import {
   Dumbbell, 
   TrendingUp, 
   Pill,
-  ArrowLeft,
   ShieldCheck
 } from "lucide-react";
 import { TabID } from "@/app/dashboard/my-apps/health/types";
@@ -40,27 +40,48 @@ export default function HealthSidebar({ activeTab, setActiveTab }: HealthSidebar
   const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
+    // Process context mutations safely against state revisions
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Initial secure token signature validation
+    async function loadInitialIdentity() {
       try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setTenantEmail(parsed.email);
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
         } else {
-          setTenantEmail("anonymous_isolated");
+          handleUserIdentity(null);
         }
       } catch (err) {
-        console.error("SIDEBAR_AUTH_PARSE_EXCEPTION:", err);
+        console.error("SIDEBAR_AUTH_EXCEPTION:", err);
         setTenantEmail("fault_containment_mode");
       }
-    } else {
-      setTenantEmail("unauthenticated_session");
     }
+    loadInitialIdentity();
+
+    // 2. Real-time auth state channel connection
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    // Tear down channels cleanly on component unmount
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col justify-between shrink-0 min-h-screen select-none">
       <div className="p-6">
+        
         {/* Core Subsystem Branding Panel */}
         <div className="mb-8 text-left">
           <span className="text-[9px] font-mono font-black tracking-widest text-purple-600 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded uppercase">
@@ -82,7 +103,7 @@ export default function HealthSidebar({ activeTab, setActiveTab }: HealthSidebar
                 key={item.id}
                 type="button"
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full h-11 flex items-center gap-3 px-4 rounded-xl text-xs font-mono font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                className={`w-full h-11 flex items-center gap-3 px-4 rounded-xl text-xs font-mono font-black uppercase tracking-wider transition-all cursor-pointer border text-left ${
                   isActive
                     ? "bg-purple-50 text-purple-700 border-purple-100/70 shadow-2xs"
                     : "text-gray-400 hover:text-gray-900 hover:bg-gray-50 border-transparent"
@@ -98,6 +119,7 @@ export default function HealthSidebar({ activeTab, setActiveTab }: HealthSidebar
 
       {/* Security Checkpoint and Account Isolation Footer */}
       <div className="p-4 border-t border-gray-100 space-y-3 bg-gray-50/50">
+        
         {/* Isolated Session Environment Card */}
         <div className="bg-white border border-gray-200 rounded-xl p-2.5 flex items-center gap-2 shadow-2xs text-left">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { 
   BarChart3, 
   Wallet, 
@@ -11,7 +12,8 @@ import {
   Info, 
   Loader2,
   TrendingUp,
-  ArrowRightLeft
+  ArrowRightLeft,
+  AlertCircle
 } from "lucide-react";
 
 interface DBTransaction {
@@ -31,8 +33,8 @@ interface MonthData {
 }
 
 export default function SpendingTab(): React.JSX.Element {
-  // --- MULTI-TENANT SESSION HANDSHAKE ---
-  const [userEmail, setUserEmail] = useState<string>("");
+  // --- MULTI-TENANT SESSION SECURITY HANDSHAKE REGISTRY ---
+  const [userEmail, setUserEmail] = useState<string>("authenticating...");
   const [timeframe, setTimeframe] = useState<"Monthly" | "Weekly" | "Daily">("Monthly");
   const [chartData, setChartData] = useState<MonthData[]>([]);
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>("");
@@ -40,20 +42,43 @@ export default function SpendingTab(): React.JSX.Element {
   const [rawTransactions, setRawTransactions] = useState<DBTransaction[]>([]);
   const [activeReportTab, setActiveReportTab] = useState<"reports" | "transactions">("reports");
 
-  // Hydrate tenant email from browser storage space securely
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
-      try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setUserEmail(parsed.email);
-        }
-      } catch (err) {
-        console.error("SPENDING_AUTH_HYDRATION_EXCEPTION:", err);
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setUserEmail(user.email);
+      } else if (user) {
+        setUserEmail("anonymous_isolated");
+      } else {
+        setUserEmail("unauthenticated_session");
       }
     }
+
+    async function syncTenantSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
+        }
+      } catch (err) {
+        console.error("SPENDING_AUTH_HANDSHAKE_EXCEPTION:", err);
+        setUserEmail("fault_containment_mode");
+      }
+    }
+    syncTenantSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  const isSecuredTenant = userEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(userEmail);
 
   // --- HISTORICAL CHRON BASELINE GENERATOR (Past 6 Months) ---
   const generatePastSixMonths = useCallback(() => {
@@ -71,7 +96,11 @@ export default function SpendingTab(): React.JSX.Element {
 
   // --- CORE PIPELINE LIVE DATA INGESTION FETCH ---
   const fetchSpendingMetricsPipeline = useCallback(async () => {
-    if (!userEmail) return;
+    if (!isSecuredTenant) {
+      setChartData([]);
+      setRawTransactions([]);
+      return;
+    }
     setIsDataLoading(true);
     try {
       const response = await fetch("/api/plaid/sync-transactions", {
@@ -129,17 +158,17 @@ export default function SpendingTab(): React.JSX.Element {
     } finally {
       setIsDataLoading(false);
     }
-  }, [userEmail, generatePastSixMonths]);
+  }, [userEmail, isSecuredTenant, generatePastSixMonths]);
 
   useEffect(() => {
-    if (userEmail) {
+    if (isSecuredTenant) {
       fetchSpendingMetricsPipeline();
     }
-  }, [userEmail, fetchSpendingMetricsPipeline]);
+  }, [isSecuredTenant, fetchSpendingMetricsPipeline]);
 
   // --- DERIVED VIEW QUANTIFIERS ---
   const activeMonthData = chartData.find((m) => m.key === selectedMonthKey) || chartData[chartData.length - 1] || {
-    label: "Active", earned: 5369, spent: 3695, incomeEvents: 2
+    label: "Active", earned: 0, spent: 0, incomeEvents: 0
   };
 
   const calculatedBillsVolume = activeMonthData.spent * 0.30; // Approximated 30% metric split profile
@@ -157,26 +186,55 @@ export default function SpendingTab(): React.JSX.Element {
   // Maximum ceiling calculator determines scaling height vectors dynamically inside chart frame views
   const chartPeakCeiling = Math.max(...chartData.map((m) => Math.max(m.earned, m.spent)), 6000);
 
+  const radius = 80;
+  const circumference = 2 * Math.PI * radius;
+
   return (
     <div className="space-y-6 animate-fadeIn max-w-[650px] mx-auto p-1 text-gray-800 select-none">
       
-      {/* 1. VIEW SEGMENTED CONTROL MENU SWITCHER */}
+      {/* 1. CONTROL DECK HEADER STRIP */}
+      <div className="border-b border-gray-200 pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-purple-600" /> Transactional Volatility Analyzer
+          </h3>
+          <p className="text-xs text-gray-400 font-medium mt-0.5 text-left">
+            Audit systemic outflows, rolling historical buffers, and cryptographically synchronized Plaid transactions stream partitions.
+          </p>
+        </div>
+
+        {/* SECURE TELEMETRY MONITORED STATUS PILL */}
+        <div className="flex items-center gap-2 text-[10px] text-gray-500 font-bold font-mono uppercase bg-gray-50 px-2.5 py-1.5 rounded-md border border-gray-100 max-w-fit shrink-0 self-start sm:self-auto">
+          <span className={`w-2 h-2 rounded-full ${userEmail === "authenticating..." ? 'bg-purple-500 animate-ping' : isSecuredTenant ? 'bg-emerald-500' : 'bg-rose-400'}`} />
+          {userEmail === "authenticating..." ? (
+            <span>Authorizing Matrix...</span>
+          ) : userEmail === "unauthenticated_session" ? (
+            <span className="text-rose-600">Access Restricted</span>
+          ) : (
+            <span>Stream Authenticated</span>
+          )}
+        </div>
+      </div>
+
+      {/* 2. VIEW SEGMENTED CONTROL MENU SWITCHER */}
       <div className="flex justify-center border-b border-gray-200 pb-3">
         <div className="flex gap-10 text-xs font-mono font-black uppercase tracking-wider">
           <button 
             type="button" 
+            disabled={!isSecuredTenant}
             onClick={() => setActiveReportTab("reports")}
-            className={`pb-2.5 transition-all cursor-pointer border-b-2 ${
-              activeReportTab === "reports" ? "text-purple-600 border-purple-600 font-black" : "text-gray-400 border-transparent hover:text-gray-600"
+            className={`pb-2.5 transition-all cursor-pointer border-b-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+              activeReportTab === "reports" && isSecuredTenant ? "text-purple-600 border-purple-600 font-black" : "text-gray-400 border-transparent hover:text-gray-600"
             }`}
           >
             Analytics Reports
           </button>
           <button 
             type="button" 
+            disabled={!isSecuredTenant}
             onClick={() => setActiveReportTab("transactions")}
-            className={`pb-2.5 transition-all cursor-pointer border-b-2 ${
-              activeReportTab === "transactions" ? "text-purple-600 border-purple-600 font-black" : "text-gray-400 border-transparent hover:text-gray-600"
+            className={`pb-2.5 transition-all cursor-pointer border-b-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+              activeReportTab === "transactions" && isSecuredTenant ? "text-purple-600 border-purple-600 font-black" : "text-gray-400 border-transparent hover:text-gray-600"
             }`}
           >
             Ledger Audit
@@ -184,9 +242,22 @@ export default function SpendingTab(): React.JSX.Element {
         </div>
       </div>
 
-      {activeReportTab === "reports" ? (
-        /* 2. DYNAMIC WORKSPACE REPORTING CARD BASE WINDOW */
-        <div className="bg-white border border-gray-200 rounded-[2rem] p-5 sm:p-6 shadow-sm space-y-6">
+      {userEmail === "authenticating..." ? (
+        <div className="py-20 text-center text-xs font-mono font-bold text-purple-600 uppercase tracking-widest flex flex-col items-center justify-center gap-3 animate-pulse">
+          <Loader2 className="w-6 h-6 animate-spin" />
+          <span>Synchronizing Identity Verification Tokens...</span>
+        </div>
+      ) : userEmail === "unauthenticated_session" ? (
+        <div className="py-12 border border-dashed border-rose-200 bg-rose-50/20 rounded-3xl flex flex-col items-center justify-center text-center p-6 gap-2">
+          <AlertCircle className="w-6 h-6 text-rose-500" />
+          <p className="text-sm font-mono font-black text-gray-900 uppercase tracking-wide">Handshake Credentials Missing</p>
+          <p className="text-xs font-medium text-gray-400 max-w-sm leading-relaxed">
+            Please log into the primary cluster control deck to enable encrypted transactional aggregation paths.
+          </p>
+        </div>
+      ) : activeReportTab === "reports" ? (
+        /* 3. DYNAMIC WORKSPACE REPORTING CARD BASE WINDOW */
+        <div className="bg-white border border-gray-200 rounded-[2rem] p-5 sm:p-6 shadow-sm space-y-6 animate-fadeIn">
           
           {/* DROPDOWN CRADLE AND CHART FIELD LEGENDS */}
           <div className="flex justify-between items-center">
@@ -216,7 +287,7 @@ export default function SpendingTab(): React.JSX.Element {
             </div>
           </div>
 
-          {/* 3. CORE BAR CHART CANVAS MATRIX WRAPPER */}
+          {/* 4. CORE BAR CHART CANVAS MATRIX WRAPPER */}
           <div className="pt-2 relative">
             {isDataLoading ? (
               <div className="h-44 flex flex-col items-center justify-center space-y-2 bg-gray-50 border border-gray-100 rounded-2xl">
@@ -229,10 +300,10 @@ export default function SpendingTab(): React.JSX.Element {
                 <div className="relative h-44 flex items-end justify-between px-3 border-b border-gray-100 pb-1.5 bg-gray-50/20 rounded-t-2xl">
                   
                   {/* Horizontal Grid Line Matrix Rules */}
-                  <div className="absolute inset-x-0 top-2 border-t border-dashed border-gray-200/60 text-[9px] text-gray-300 font-mono font-bold px-2 pointer-events-none">
+                  <div className="absolute inset-x-0 top-2 border-t border-dashed border-gray-200/60 text-[9px] text-gray-300 font-mono font-bold px-2 pointer-events-none text-left">
                     ${(chartPeakCeiling / 1000).toFixed(1)}k Cap
                   </div>
-                  <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-gray-200/60 text-[9px] text-gray-300 font-mono font-bold px-2 pointer-events-none">
+                  <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-gray-200/60 text-[9px] text-gray-300 font-mono font-bold px-2 pointer-events-none text-left">
                     ${(chartPeakCeiling / 2000).toFixed(1)}k Mid
                   </div>
 
@@ -282,7 +353,7 @@ export default function SpendingTab(): React.JSX.Element {
             )}
           </div>
 
-          {/* 4. GRANULAR SECTOR BREAKDOWN MATRICES LISTS */}
+          {/* 5. GRANULAR SECTOR BREAKDOWN MATRICES LISTS */}
           <div className="space-y-3 pt-2">
             
             {/* CARD ITEM 1: INCOME */}
@@ -348,8 +419,7 @@ export default function SpendingTab(): React.JSX.Element {
                 <span className="text-base font-mono font-black text-emerald-600 tabular-nums">
                   ${Math.round(leftForSavingsValue).toLocaleString()}
                 </span>
-                {/* Fixed TypeScript diagnostic context wrapper to isolate Lucide Props */}
-                <span title="Retention delta calculation metric formula" className="cursor-help flex items-center text-gray-300 hover:text-gray-400 transition-colors">
+                <span className="cursor-help flex items-center text-gray-300 hover:text-gray-400 transition-colors">
                   <Info className="w-3.5 h-3.5" />
                 </span>
               </div>
@@ -360,7 +430,7 @@ export default function SpendingTab(): React.JSX.Element {
         </div>
       ) : (
         /* AUDIT TRAIL DATA STREAM FOR FULL TENANT TRANSPARENCY */
-        <div className="bg-white border border-gray-200 rounded-[2rem] p-5 shadow-sm space-y-4 text-left">
+        <div className="bg-white border border-gray-200 rounded-[2rem] p-5 shadow-sm space-y-4 text-left animate-fadeIn">
           <div className="flex items-center gap-1.5 border-b border-gray-100 pb-3">
             <ArrowRightLeft className="w-4 h-4 text-purple-600" />
             <h4 className="text-xs font-mono font-black uppercase tracking-wider text-gray-900">Partitioned Asset Transactions Stream</h4>

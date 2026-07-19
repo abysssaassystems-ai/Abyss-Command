@@ -1,7 +1,9 @@
 "use client";
+
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { supabase } from "@/lib/supabaseClient";
 
 interface UserSession {
   account_name: string;
@@ -11,25 +13,60 @@ interface UserSession {
 
 export default function WebDevelopmentSidebar(): React.JSX.Element {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<UserSession | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // Read the active tab directly from URL parameter layout matrix
+  const activeTab = searchParams.get('tab') || 'progress';
 
   useEffect(() => {
-    const session = localStorage.getItem("active_user");
-    if (session) {
-      setUser(JSON.parse(session));
-    } else {
-      // Direct boot-loop fallback if someone tries to access dashboard without logging in
-      setUser({
-        account_name: "Nexus Labs Inc.",
-        email: "operations@nexuslabs.io",
-        access_level: "administrator"
-      });
-    }
-  }, []);
+    const fetchUserProfileContext = async () => {
+      try {
+        // 1. EXTRACT AUTHENTICATED USER: Read current token properties from the crypto-layer
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
-  const handleTerminalLogout = () => {
-    localStorage.removeItem("active_user");
-    router.push("/web-login");
+        if (authError || !authUser) {
+          router.replace("/web-login");
+          return;
+        }
+
+        // 2. QUERY PROFILE METADATA: Match database profile fields secured via RLS
+        const { data: profile, error: profileError } = await supabase
+          .from("web_login_users")
+          .select("account_name, email, access_level")
+          .eq("id", authUser.id)
+          .maybeSingle();
+
+        if (profileError || !profile) {
+          setUser({
+            account_name: "Unknown Node",
+            email: authUser.email || "No email provided",
+            access_level: "restricted"
+          });
+          return;
+        }
+
+        setUser(profile);
+      } catch (err) {
+        console.error("SIDEBAR_IDENTITY_RESOLUTION_FAULT:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserProfileContext();
+  }, [router]);
+
+  const handleTerminalLogout = async () => {
+    try {
+      // 3. ATOMIC SIGN-OUT: Invalidate active tokens safely on both client and server engines
+      await supabase.auth.signOut();
+      router.push("/web-login");
+    } catch (err) {
+      // Force programmatic fallback reroute if connection loops fail
+      router.push("/web-login");
+    }
   };
 
   return (
@@ -45,35 +82,43 @@ export default function WebDevelopmentSidebar(): React.JSX.Element {
         {/* Dynamic User Identity Profile Widget */}
         <div className="bg-[#4B5563]/40 border border-gray-500/20 p-4 rounded-2xl space-y-2">
           <span className="text-[9px] text-gray-400 font-bold block uppercase tracking-wider">// IDENTITY SPEC</span>
-          <div>
-            <div className="text-white font-black uppercase text-sm tracking-wide truncate">
-              {user?.account_name}
+          {loading ? (
+            <div className="space-y-2 animate-pulse py-1">
+              <div className="h-4 bg-gray-500/40 rounded w-3/4" />
+              <div className="h-3 bg-gray-500/20 rounded w-1/2" />
             </div>
-            <div className="text-gray-400 font-sans text-[11px] mt-0.5 truncate">{user?.email}</div>
-          </div>
-          <div className="pt-2">
-            <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border tracking-wider ${
-              user?.access_level === 'administrator' 
-                ? 'bg-cyan-500/10 text-[#00F2FE] border-[#00F2FE]/20 shadow-[0_0_8px_rgba(0,242,254,0.1)]' 
-                : 'bg-zinc-500/10 text-zinc-300 border-zinc-500/20'
-            }`}>
-              ★ LEVEL :: {user?.access_level}
-            </span>
-          </div>
+          ) : (
+            <>
+              <div>
+                <div className="text-white font-black uppercase text-sm tracking-wide truncate">
+                  {user?.account_name}
+                </div>
+                <div className="text-gray-400 font-sans text-[11px] mt-0.5 truncate">{user?.email}</div>
+              </div>
+              <div className="pt-2">
+                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border tracking-wider ${
+                  user?.access_level === 'administrator' 
+                    ? 'bg-cyan-500/10 text-[#00F2FE] border-[#00F2FE]/20 shadow-[0_0_8px_rgba(0,242,254,0.1)]' 
+                    : 'bg-zinc-500/10 text-zinc-300 border-zinc-500/20'
+                }`}>
+                  ★ LEVEL :: {user?.access_level}
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Segment Routing Navigation Tree Layout */}
- {/* Update ONLY the nav buttons inside your Sidebar file to pass tab parameters */}
-<nav className="space-y-1.5 pt-2">
-  <span className="text-[9px] text-gray-400 font-bold block uppercase tracking-wider mb-2">// DIRECTORIES</span>
-  <SidebarNavButton href="/web-dashboard?tab=progress" label="Project Progress" icon="🚀" />
-  <SidebarNavButton href="/web-dashboard?tab=requests" label="My Requests" icon="📂" />
-  <SidebarNavButton href="/web-dashboard?tab=integrations" label="Website Integrations" icon="🔌" />
-  <SidebarNavButton href="/web-dashboard?tab=hardware" label="Web Hardware" icon="📟" />
-  <SidebarNavButton href="/web-dashboard?tab=account" label="My Account" icon="🛡️" />
-  <SidebarNavButton href="/web-dashboard?tab=billing" label="Billing" icon="💳" />
-  <SidebarNavButton href="/web-dashboard?tab=branding" label="Branding" icon="🎨" />
-</nav>
+        <nav className="space-y-1.5 pt-2">
+          <span className="text-[9px] text-gray-400 font-bold block uppercase tracking-wider mb-2">// DIRECTORIES</span>
+          <SidebarNavButton href="/web-dashboard?tab=progress" label="Project Progress" icon="🚀" isActive={activeTab === 'progress'} />
+          <SidebarNavButton href="/web-dashboard?tab=requests" label="My Requests" icon="📂" isActive={activeTab === 'requests'} />
+          <SidebarNavButton href="/web-dashboard?tab=integrations" label="Website Integrations" icon="🔌" isActive={activeTab === 'integrations'} />
+          <SidebarNavButton href="/web-dashboard?tab=hardware" label="Web Hardware" icon="📟" isActive={activeTab === 'hardware'} />
+          <SidebarNavButton href="/web-dashboard?tab=account" label="My Account" icon="🛡️" isActive={activeTab === 'account'} />
+          <SidebarNavButton href="/web-dashboard?tab=billing" label="Billing" icon="💳" isActive={activeTab === 'billing'} />
+          <SidebarNavButton href="/web-dashboard?tab=branding" label="Branding" icon="🎨" isActive={activeTab === 'branding'} />
+        </nav>
       </div>
 
       {/* Disconnection Control Area */}
@@ -90,14 +135,25 @@ export default function WebDevelopmentSidebar(): React.JSX.Element {
   );
 }
 
-function SidebarNavButton({ href, label, icon }: { href: string; label: string; icon: string }) {
+interface NavButtonProps {
+  href: string;
+  label: string;
+  icon: string;
+  isActive: boolean;
+}
+
+function SidebarNavButton({ href, label, icon, isActive }: NavButtonProps) {
   return (
     <Link 
       href={href}
-      className="flex items-center space-x-3 p-3 text-gray-300 hover:bg-[#4B5563]/40 hover:text-white rounded-xl transition border border-transparent hover:border-gray-500/10 font-sans"
+      className={`flex items-center space-x-3 p-3 rounded-xl transition border font-sans ${
+        isActive 
+          ? 'bg-[#4B5563]/70 text-white border-gray-500/30 shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)] font-bold' 
+          : 'text-gray-300 border-transparent hover:bg-[#4B5563]/40 hover:text-white hover:border-gray-500/10'
+      }`}
     >
-      <span className="text-sm">{icon}</span>
-      <span className="font-semibold text-xs tracking-wide">{label}</span>
+      <span className={`text-sm transition-transform duration-200 ${isActive ? 'scale-110' : ''}`}>{icon}</span>
+      <span className="text-xs tracking-wide">{label}</span>
     </Link>
   );
 }

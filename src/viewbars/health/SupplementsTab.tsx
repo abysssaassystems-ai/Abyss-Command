@@ -1,16 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { SupplementStackItem } from "@/app/dashboard/my-apps/health/types";
 import { 
   Pill, 
-  Plus,  
+  Plus,   
   Check, 
-  Circle, 
   Trash2, 
-  Clock, 
-  Sparkles,
-  Layers
+  Clock
 } from "lucide-react";
 
 interface SupplementsTabProps {
@@ -23,29 +21,54 @@ export default function SupplementsTab({
   setSupplementStack 
 }: SupplementsTabProps): React.JSX.Element {
   // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
-  const [tenantEmail, setTenantEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
   const [newName, setNewName] = useState("");
   const [newDosage, setNewDosage] = useState("");
   const [newTiming, setNewTiming] = useState<"morning" | "noon" | "night" | "pre_workout">("morning");
 
   // Securely resolve active software partition credentials
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Initial signature clearance validation pass
+    async function syncTenantSession() {
       try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setTenantEmail(parsed.email);
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
         }
       } catch (err) {
         console.error("SUPPLEMENTS_AUTH_HYDRATION_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
       }
     }
+    syncTenantSession();
+
+    // 2. Real-time token synchronization channel listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  const isSecuredTenant = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
 
   const handleAddSupplement = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim()) return;
+    if (!newName.trim() || tenantEmail === "unauthenticated_session") return;
 
     const newItem: SupplementStackItem = {
       id: `sup_custom_${Date.now()}`,
@@ -64,6 +87,7 @@ export default function SupplementsTab({
   };
 
   const toggleCheck = (id: string) => {
+    if (tenantEmail === "unauthenticated_session") return;
     setSupplementStack(prev => prev.map(s => s.id === id ? { ...s, isTaken: !s.isTaken } : s));
   };
 
@@ -112,10 +136,11 @@ export default function SupplementsTab({
               <input 
                 type="text" 
                 required
-                placeholder="e.g., Vitamin D3, CoQ10" 
+                disabled={tenantEmail === "unauthenticated_session"}
+                placeholder={tenantEmail === "unauthenticated_session" ? "Session locked" : "e.g., Vitamin D3, CoQ10"} 
                 value={newName} 
                 onChange={e => setNewName(e.target.value)} 
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 font-sans font-semibold text-gray-800 placeholder-gray-300 outline-none focus:border-purple-500 text-base sm:text-xs transition-colors" 
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 font-sans font-semibold text-gray-800 placeholder-gray-300 outline-none focus:border-purple-500 text-base sm:text-xs transition-colors disabled:opacity-40" 
               />
             </div>
             
@@ -123,10 +148,11 @@ export default function SupplementsTab({
               <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">Dosage Allocation</label>
               <input 
                 type="text" 
+                disabled={tenantEmail === "unauthenticated_session"}
                 placeholder="e.g., 5000 IU, 200mg" 
                 value={newDosage} 
                 onChange={e => setNewDosage(e.target.value)} 
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 font-sans font-semibold text-gray-800 placeholder-gray-300 outline-none focus:border-purple-500 text-base sm:text-xs transition-colors" 
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 font-sans font-semibold text-gray-800 placeholder-gray-300 outline-none focus:border-purple-500 text-base sm:text-xs transition-colors disabled:opacity-40" 
               />
             </div>
             
@@ -136,8 +162,9 @@ export default function SupplementsTab({
                 <Clock className="w-3.5 h-3.5 text-gray-400 mr-2 shrink-0 stroke-[2.5]" />
                 <select 
                   value={newTiming} 
+                  disabled={tenantEmail === "unauthenticated_session"}
                   onChange={e => setNewTiming(e.target.value as any)} 
-                  className="w-full bg-transparent py-2.5 text-gray-800 outline-none cursor-pointer font-black uppercase tracking-wider text-[11px]"
+                  className="w-full bg-transparent py-2.5 text-gray-800 outline-none cursor-pointer font-black uppercase tracking-wider text-[11px] disabled:opacity-40"
                 >
                   <option value="morning">Morning Split Sequence</option>
                   <option value="noon">Midday Split Sequence</option>
@@ -149,7 +176,8 @@ export default function SupplementsTab({
 
             <button 
               type="submit" 
-              className="w-full bg-gray-900 hover:bg-gray-800 text-white font-mono font-black uppercase py-3 rounded-xl tracking-wider text-[10px] mt-4 shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              disabled={tenantEmail === "unauthenticated_session"}
+              className="w-full bg-gray-900 hover:bg-gray-800 text-white font-mono font-black uppercase py-3 rounded-xl tracking-wider text-[10px] mt-4 shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Plus className="w-3.5 h-3.5 stroke-[3]" /> Append Stack Matrix Token
             </button>
@@ -167,7 +195,9 @@ export default function SupplementsTab({
               <div 
                 key={sup.id}
                 onClick={() => toggleCheck(sup.id)}
-                className={`p-4 border rounded-xl flex items-center justify-between cursor-pointer shadow-xs transition-all group ${
+                className={`p-4 border rounded-xl flex items-center justify-between shadow-xs transition-all group ${
+                  tenantEmail === "unauthenticated_session" ? "cursor-not-allowed" : "cursor-pointer"
+                } ${
                   sup.isTaken 
                     ? 'bg-gray-50/70 border-gray-200 opacity-60' 
                     : 'bg-white border-gray-200 hover:border-gray-300'

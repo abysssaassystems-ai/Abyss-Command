@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -18,54 +19,54 @@ export default function WebDevelopmentLogin(): React.JSX.Element {
     setAuthStatus(null);
 
     try {
-      // 1. Check for existing user records
-      let { data, error } = await supabase
-        .from("web_login_users")
-        .select("*")
-        .eq("email", email)
-        .eq("password", password)
-        .maybeSingle();
+      // 1. SECURE AUTHENTICATION: Validate credentials natively via Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-      if (error) {
+      if (authError) {
         setAuthStatus({
           type: "error",
-          msg: `DATABASE_ERROR: ${error.message}`
+          msg: `AUTH_FAILED: ${authError.message}`,
         });
         return;
       }
 
-      // 2. SELF-HEALING LOOP: If no record exists, seed it automatically
-      if (!data) {
-        const { data: newUser, error: insertError } = await supabase
-          .from("web_login_users")
-          .insert([
-            {
-              email: email,
-              password: password,
-              account_name: email.split('@')[0].toUpperCase() + " (Dev)",
-              access_level: "administrator"
-            }
-          ])
-          .select()
-          .single();
+      // 2. PROFILE VALIDATION: Query the 1:1 user profile using the secure auth.uid() token
+      const { data: profile, error: profileError } = await supabase
+        .from("web_login_users")
+        .select("*")
+        .eq("id", authData.user.id)
+        .maybeSingle();
 
-        if (insertError) {
-          setAuthStatus({
-            type: "error",
-            msg: `SEED_FAILED: Could not create user profile automatically. ${insertError.message}`
-          });
-          return;
-        }
-        data = newUser;
+      if (profileError) {
+        setAuthStatus({
+          type: "error",
+          msg: `PROFILE_FETCH_FAILED: ${profileError.message}`,
+        });
+        return;
       }
 
-      // 3. COMPLETE TERMINAL HANDSHAKE
+      // 3. TENANT SEGREGATION: If account exists in Auth but has no Web Profile, reject access
+      if (!profile) {
+        // Clear active session immediately to prevent cross-portal leakage
+        await supabase.auth.signOut();
+        setAuthStatus({
+          type: "error",
+          msg: "ACCESS_DENIED: Credentials valid, but account is not registered as a Website Project Workspace.",
+        });
+        return;
+      }
+
+      // 4. COMPLETE TERMINAL HANDSHAKE
       setAuthStatus({
         type: "success",
-        msg: `HANDSHAKE_COMPLETED: Access granted for ${data.account_name}. Opening dashboard...`
+        msg: `HANDSHAKE_COMPLETED: Access granted for ${profile.account_name}. Opening dashboard...`,
       });
       
-      localStorage.setItem("active_user", JSON.stringify(data));
+      // Save web profile details safely for local UI state synchronization
+      localStorage.setItem("active_user", JSON.stringify(profile));
       
       setTimeout(() => {
         router.push("/web-dashboard");
@@ -74,7 +75,7 @@ export default function WebDevelopmentLogin(): React.JSX.Element {
     } catch (err: any) {
       setAuthStatus({
         type: "error",
-        msg: `CRITICAL_EXCEPTION: ${err.message || err}`
+        msg: `CRITICAL_EXCEPTION: ${err.message || err}`,
       });
     } finally {
       setIsSubmitting(false);

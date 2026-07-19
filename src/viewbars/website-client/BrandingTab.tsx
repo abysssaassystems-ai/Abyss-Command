@@ -1,24 +1,23 @@
 "use client";
+
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-interface UserSession {
-  email: string;
-  account_name: string;
-}
-
 export default function BrandingTab(): React.JSX.Element {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [clientEmail, setClientEmail] = useState<string>("");
   
-  // Existing States
+  // Identity Parameters
+  const [userId, setUserId] = useState<string>("");
+  const [userEmail, setUserEmail] = useState<string>("");
+  
+  // Design System States
   const [primaryColor, setPrimaryColor] = useState<string>("#00F2FE");
   const [secondaryColor, setSecondaryColor] = useState<string>("#374151");
   const [tertiaryColor, setTertiaryColor] = useState<string>("#F9FAFB");
   const [logoShape, setLogoShape] = useState<"square" | "round">("square");
   const [fileList, setFileList] = useState<string[]>([]);
   
-  // 4 New Branding Operational States
+  // Branding Operational States
   const [fontStyle, setFontStyle] = useState<"sans" | "serif" | "mono">("sans");
   const [brandTone, setBrandTone] = useState<"professional" | "bold" | "casual" | "technical">("professional");
   const [uiThemeStyle, setUiThemeStyle] = useState<"modern" | "minimalist" | "cyberpunk" | "corporate">("modern");
@@ -27,21 +26,28 @@ export default function BrandingTab(): React.JSX.Element {
 
   // System State Monitors
   const [isOver, setIsOver] = useState<boolean>(false);
-  const [isSaving, setIsSubmitting] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   const [logStatus, setLogStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
-  // 1. DATA FLUID HYDRATION: Hydrate parameters from cloud profile rows on initial entry
+  // 1. DATA FLUID HYDRATION: Secure user tracking & fetch existing metrics from database
   useEffect(() => {
-    const session = localStorage.getItem("active_user");
-    if (session) {
-      const parsedUser: UserSession = JSON.parse(session);
-      setClientEmail(parsedUser.email);
+    async function secureHydrateBranding() {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError || !user) {
+          setLogStatus({ type: "error", msg: "AUTH_UNVERIFIED: Active security token missing or expired." });
+          return;
+        }
 
-      async function pullSavedBranding() {
+        setUserId(user.id);
+        setUserEmail(user.email || "");
+
+        // Dual-identifier fallback matching strategy for cross-layer integrity
         const { data, error } = await supabase
           .from('client_branding_assets')
           .select('*')
-          .eq('client_email', parsedUser.email)
+          .or(`user_id.eq.${user.id},client_email.eq.${user.email}`)
           .maybeSingle();
 
         if (!error && data) {
@@ -56,25 +62,29 @@ export default function BrandingTab(): React.JSX.Element {
           setCompanyTagline(data.company_tagline || "");
           setTargetAudience(data.target_audience || "");
         }
+      } catch (err) {
+        setLogStatus({ type: "error", msg: "HYDRATION_FAULT: Failed resolving backend design variables." });
       }
-      pullSavedBranding();
     }
+    
+    secureHydrateBranding();
   }, []);
 
-  // 2. BINARY STORAGE PIPELINE: Upload files straight to the public branding-assets bucket
+  // 2. BINARY STORAGE PIPELINE: Upload files into multi-tenant secure bucket directories
   const transferBinaryPayload = async (files: File[]) => {
-    if (!clientEmail) return;
+    if (!userId) return;
     setLogStatus({ type: "success", msg: "UPLINK_START: Transferring binary file elements to storage bucket..." });
 
     for (const file of files) {
-      const uniquePathName = `${clientEmail}-${Date.now()}-${file.name}`;
+      // Deterministic folder mapping using UUID prevents filename cross-contamination
+      const uniquePathName = `${userId}/${Date.now()}-${file.name}`;
       
       const { error: uploadError } = await supabase.storage
         .from('branding-assets')
         .upload(uniquePathName, file, { cacheControl: '3600', upsert: true });
 
       if (uploadError) {
-        setAuthErrorMsg(`STORAGE_FAULT: File upload failed. ${uploadError.message}`);
+        setLogStatus({ type: "error", msg: `STORAGE_FAULT: File upload aborted. ${uploadError.message}` });
         return;
       }
       
@@ -97,21 +107,18 @@ export default function BrandingTab(): React.JSX.Element {
     }
   };
 
-  const setAuthErrorMsg = (msg: string) => {
-    setLogStatus({ type: "error", msg });
-  };
-
-  // 3. LEDGER SAVE SYNC: Commit structural inputs straight into Supabase database row arrays
+  // 3. LEDGER SAVE SYNC: Commit client preferences directly to cloud clusters
   const commitBrandingProfile = async () => {
-    if (!clientEmail) return;
-    setIsSubmitting(true);
+    if (!userId) return;
+    setIsSaving(true);
     setLogStatus(null);
 
     try {
       const { error } = await supabase
         .from('client_branding_assets')
         .upsert({
-          client_email: clientEmail,
+          user_id: userId,
+          client_email: userEmail,
           primary_color: primaryColor,
           secondary_color: secondaryColor,
           tertiary_color: tertiaryColor,
@@ -123,7 +130,7 @@ export default function BrandingTab(): React.JSX.Element {
           company_tagline: companyTagline,
           target_audience: targetAudience,
           updated_at: new Date().toISOString()
-        });
+        }, { onConflict: 'user_id' }); // Locks record resolution straight down to matching UUID arrays
 
       if (!error) {
         setLogStatus({ type: "success", msg: "IDENTITY_SYNCED: Design tokens locked onto cloud schema database records." });
@@ -133,7 +140,7 @@ export default function BrandingTab(): React.JSX.Element {
     } catch (err: any) {
       setLogStatus({ type: "error", msg: `CRITICAL_FAULT: ${err.message || err}` });
     } finally {
-      setIsSubmitting(false);
+      setIsSaving(false);
     }
   };
 
@@ -149,7 +156,7 @@ export default function BrandingTab(): React.JSX.Element {
         <button
           type="button"
           onClick={commitBrandingProfile}
-          disabled={isSaving}
+          disabled={isSaving || !userId}
           className="px-6 py-2.5 bg-gradient-to-r from-[#00B8C4] to-[#00F2FE] text-gray-900 font-black text-xs uppercase tracking-wider rounded-xl shadow-md hover:opacity-90 transition-opacity disabled:opacity-40"
         >
           {isSaving ? "Syncing Framework..." : "Save Brand Blueprint"}
@@ -194,7 +201,7 @@ export default function BrandingTab(): React.JSX.Element {
 
           <hr className="border-gray-500/20" />
 
-          {/* NEW SECTION 2: Typography Scale Matrix */}
+          {/* SECTION 2: Typography Scale Matrix */}
           <div className="space-y-4">
             <div>
               <span className="text-[9px] font-mono font-bold uppercase text-gray-400 block">// TYPOGRAPHY FONT SPECIFICATION</span>
@@ -221,7 +228,7 @@ export default function BrandingTab(): React.JSX.Element {
 
           <hr className="border-gray-500/20" />
 
-          {/* NEW SECTION 3: Content Tone Configuration Parameters */}
+          {/* SECTION 3: Content Tone Configuration Parameters */}
           <div className="space-y-4">
             <div>
               <span className="text-[9px] font-mono font-bold uppercase text-gray-400 block">// INTERACTION LANGUAGE TONE</span>
@@ -245,7 +252,7 @@ export default function BrandingTab(): React.JSX.Element {
 
           <hr className="border-gray-500/20" />
 
-          {/* NEW SECTION 4: Design Framework Theme Model Selection */}
+          {/* SECTION 4: Design Framework Theme Model Selection */}
           <div className="space-y-4">
             <div>
               <span className="text-[9px] font-mono font-bold uppercase text-gray-400 block">// INTERFACE STRUCTURAL MODEL</span>
@@ -275,7 +282,7 @@ export default function BrandingTab(): React.JSX.Element {
 
           <hr className="border-gray-500/20" />
 
-          {/* NEW SECTION 5: Core Identity Value Inputs */}
+          {/* SECTION 5: Core Identity Value Inputs */}
           <div className="space-y-4">
             <div>
               <span className="text-[9px] font-mono font-bold uppercase text-gray-400 block">// ARCHITECTURE MISSION CORE</span>

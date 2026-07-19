@@ -9,10 +9,9 @@ export default function AppsHeader(): React.JSX.Element {
   const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
   useEffect(() => {
-    async function syncHeaderProfile() {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      
-      if (error || !user) {
+    // Shared identity mapping layer
+    function handleUserIdentity(user: any) {
+      if (!user) {
         setTenantEmail("unauthenticated_session");
         setAccountName("Client Engine");
         return;
@@ -30,17 +29,42 @@ export default function AppsHeader(): React.JSX.Element {
       }
     }
 
+    // 1. Resolve initial server/client handshake signature
+    async function syncHeaderProfile() {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (!error && user) {
+        handleUserIdentity(user);
+      } else {
+        handleUserIdentity(null);
+      }
+    }
     syncHeaderProfile();
+
+    // 2. Stream real-time auth event loops to match active context changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleSessionLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = "/login";
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("SIGNOUT_FAULT:", err);
+    } finally {
+      // Force hard reload to wipe client router cache and destroy cookies via middleware
+      window.location.href = "/login";
+    }
   };
 
   return (
     <header className="h-20 bg-white border-b border-zinc-200 px-6 md:px-8 flex items-center justify-between select-none z-40 text-left">
       
+      {/* AUTHORIZED ACCOUNT METRICS */}
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-center text-zinc-600 shrink-0">
           <User className="w-4 h-4 stroke-[2.5]" />
@@ -55,6 +79,7 @@ export default function AppsHeader(): React.JSX.Element {
         </div>
       </div>
 
+      {/* ACTION TOOLS & SECURITY BOUNDARY READOUT */}
       <div className="flex items-center gap-4">
         <div className="hidden lg:flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-xl px-3 h-11 text-left">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />

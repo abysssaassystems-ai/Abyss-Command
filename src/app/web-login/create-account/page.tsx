@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -76,11 +77,39 @@ export default function CreateAccountWizard(): React.JSX.Element {
     setStatusMsg(null);
 
     try {
-      // 1. Ingest profile data arrays to your master onboarding tracking table
+      // 1. SECURE REGISTRATION: Create cryptographic identity record inside Supabase Auth
+      // The options.data block safely transfers properties to trigger the automatic 'web_login_users' sync
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            account_type: "web_client",
+            account_name: formData.account_name,
+            access_level: "administrator",
+            username: formData.username
+          }
+        }
+      });
+
+      if (authError) {
+        setStatusMsg({ type: "error", msg: `AUTH_PROVISION_FAULT: ${authError.message}` });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!authData.user) {
+        setStatusMsg({ type: "error", msg: "AUTH_PROVISION_FAULT: No user identity object returned from auth engine." });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 2. LOG AUDIT METADATA: Insert descriptive profile metadata tied securely to the user's genuine UUID
       const { error: insertOnboardingError } = await supabase
         .from("web_create_account")
         .insert([
           {
+            id: authData.user.id, // Explicitly binds onboarding details directly to the authenticated database ID
             first_name: formData.first_name,
             last_name: formData.last_name,
             email: formData.email,
@@ -97,25 +126,6 @@ export default function CreateAccountWizard(): React.JSX.Element {
 
       if (insertOnboardingError) {
         setStatusMsg({ type: "error", msg: `ONBOARDING_LEDGER_FAULT: ${insertOnboardingError.message}` });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // 2. Commit account credentials directly to your login access structure
-      const { error: insertUserError } = await supabase
-        .from("web_login_users")
-        .insert([
-          {
-            email: formData.email,
-            username: formData.username,
-            password: formData.password,
-            account_name: formData.account_name,
-            access_level: "administrator"
-          }
-        ]);
-
-      if (insertUserError) {
-        setStatusMsg({ type: "error", msg: `ACCESS_PROVISION_FAULT: ${insertUserError.message}` });
         setIsSubmitting(false);
         return;
       }
@@ -281,7 +291,7 @@ export default function CreateAccountWizard(): React.JSX.Element {
           </form>
         )}
 
-        {/* STEP 4: Access Credentials Setup (Saves values straight into web_login_users) */}
+        {/* STEP 4: Access Credentials Setup */}
         {step === 4 && (
           <form onSubmit={handleWizardSubmit} className="space-y-4 animate-fadeIn">
             <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800 border-b border-gray-100 pb-2">

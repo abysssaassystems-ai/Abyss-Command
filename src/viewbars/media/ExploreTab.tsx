@@ -2,24 +2,65 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, Plus, Film, Filter } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
 
 interface ExploreTabProps {
   onAddMedia: (item: any, typeContext: string) => void;
 }
 
 export default function ExploreTab({ onAddMedia }: ExploreTabProps): React.JSX.Element {
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
   const [items, setItems] = useState<any[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [scrollLoading, setScrollLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   
-  // Surgical configuration tracking matrices (replaces generic baseline settings)
+  // Surgical configuration tracking matrices
   const [mediaType, setMediaType] = useState('movie');
   const [genre, setGenre] = useState('action');
   const [year, setYear] = useState('');
 
   const observerTarget = useRef<HTMLDivElement>(null);
+
+  // Securely listen to active software environment cryptographic validations
+  useEffect(() => {
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Initial signature validation pass
+    async function syncTenantSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
+        }
+      } catch (err) {
+        console.error("EXPLORE_AUTH_HANDSHAKE_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    }
+    syncTenantSession();
+
+    // 2. Continuous real-time token tracking sync channel
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const fetchExplorationGrid = useCallback(async (targetPage: number, appendMode = false) => {
     if (targetPage === 1) setInitialLoading(true);
@@ -95,8 +136,9 @@ export default function ExploreTab({ onAddMedia }: ExploreTabProps): React.JSX.E
           <label className="text-[10px] font-mono font-black tracking-wider uppercase text-gray-400 block">Media Category</label>
           <select 
             value={mediaType} 
+            disabled={tenantEmail === "unauthenticated_session"}
             onChange={(e) => setMediaType(e.target.value)}
-            className="w-full text-xs bg-white border border-gray-300 rounded-lg p-2.5 text-gray-700 focus:border-purple-600 focus:ring-1 focus:ring-purple-600/20 outline-none cursor-pointer font-medium transition-all"
+            className="w-full text-xs bg-white border border-gray-300 rounded-lg p-2.5 text-gray-700 focus:border-purple-600 focus:ring-1 focus:ring-purple-600/20 outline-none cursor-pointer font-medium transition-all disabled:opacity-40"
           >
             <option value="movie">Movies Only</option>
             <option value="tv">TV Series Only</option>
@@ -109,8 +151,9 @@ export default function ExploreTab({ onAddMedia }: ExploreTabProps): React.JSX.E
           <label className="text-[10px] font-mono font-black tracking-wider uppercase text-gray-400 block">Genre Map Specifics</label>
           <select 
             value={genre} 
+            disabled={tenantEmail === "unauthenticated_session"}
             onChange={(e) => setGenre(e.target.value)}
-            className="w-full text-xs bg-white border border-gray-300 rounded-lg p-2.5 text-gray-700 focus:border-purple-600 focus:ring-1 focus:ring-purple-600/20 outline-none cursor-pointer font-medium transition-all"
+            className="w-full text-xs bg-white border border-gray-300 rounded-lg p-2.5 text-gray-700 focus:border-purple-600 focus:ring-1 focus:ring-purple-600/20 outline-none cursor-pointer font-medium transition-all disabled:opacity-40"
           >
             <option value="action">Action / Adventure</option>
             <option value="sci-fi">Sci-Fi / Futuristic</option>
@@ -129,16 +172,18 @@ export default function ExploreTab({ onAddMedia }: ExploreTabProps): React.JSX.E
           <label className="text-[10px] font-mono font-black tracking-wider uppercase text-gray-400 block">Release Year</label>
           <input 
             type="text" 
-            placeholder="e.g. 2026"
+            disabled={tenantEmail === "unauthenticated_session"}
+            placeholder={tenantEmail === "unauthenticated_session" ? "Locked" : "e.g. 2026"}
             value={year}
             onChange={(e) => setYear(e.target.value)}
-            className="w-full text-xs bg-white border border-gray-300 rounded-lg p-2.5 text-gray-700 focus:border-purple-600 focus:ring-1 focus:ring-purple-600/20 outline-none text-center font-mono font-bold placeholder-gray-300 transition-all"
+            className="w-full text-xs bg-white border border-gray-300 rounded-lg p-2.5 text-gray-700 focus:border-purple-600 focus:ring-1 focus:ring-purple-600/20 outline-none text-center font-mono font-bold placeholder-gray-300 transition-all disabled:opacity-40"
           />
         </div>
 
         <button 
           type="submit" 
-          className="p-2.5 bg-gray-900 text-white hover:bg-purple-600 border border-transparent rounded-lg transition-all flex items-center justify-center gap-1.5 text-xs font-bold shadow-sm active:scale-95 cursor-pointer"
+          disabled={tenantEmail === "unauthenticated_session"}
+          className="p-2.5 bg-gray-900 text-white hover:bg-purple-600 border border-transparent rounded-lg transition-all flex items-center justify-center gap-1.5 text-xs font-bold shadow-sm active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Filter className="w-3.5 h-3.5" /> Apply Filter
         </button>
@@ -187,13 +232,18 @@ export default function ExploreTab({ onAddMedia }: ExploreTabProps): React.JSX.E
 
                 {/* Overlaid Functional Action Modules */}
                 <div className="relative z-20 p-4 space-y-2">
-                  <h4 className="font-black text-xs text-gray-900 line-clamp-2 leading-tight drop-shadow-sm">{item.title}</h4>
-                  {item.releaseDate && <p className="text-[9px] font-mono font-bold text-gray-400">{item.releaseDate.split('-')[0]}</p>}
+                  <h4 className="font-black text-xs text-gray-900 line-clamp-2 leading-tight drop-shadow-sm text-left">{item.title}</h4>
+                  {item.releaseDate && <p className="text-[9px] font-mono font-bold text-gray-400 text-left">{item.releaseDate.split('-')[0]}</p>}
                   
                   <button 
                     type="button"
-                    onClick={() => onAddMedia(item, item.displayType ? item.displayType.toLowerCase() : mediaType)}
-                    className="w-full py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg flex items-center justify-center gap-1 shadow-sm hover:opacity-95 transition-opacity"
+                    disabled={tenantEmail === "unauthenticated_session"}
+                    onClick={() => {
+                      if (tenantEmail === "unauthenticated_session") return;
+                      onAddMedia(item, item.displayType ? item.displayType.toLowerCase() : mediaType);
+                    }}
+                    className="w-full py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg flex items-center justify-center gap-1 shadow-sm hover:opacity-95 transition-opacity disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed"
+                    title={tenantEmail === "unauthenticated_session" ? "Login required to track items" : "Add to library"}
                   >
                     <Plus className="w-3 h-3 stroke-[2.5]" /> Add to Tracker
                   </button>

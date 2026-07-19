@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { supabase } from "@/lib/supabaseClient";
 import { ShieldCheck, ArrowUpRight } from "lucide-react";
 
 interface BudgetSidebarProps {
@@ -16,22 +17,42 @@ export default function BudgetSidebar({ data }: BudgetSidebarProps): React.JSX.E
   const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
+    // Process context mutations safely against state revisions
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Initial secure token signature validation
+    async function syncBudgetProfile() {
       try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setTenantEmail(parsed.email);
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
         } else {
-          setTenantEmail("anonymous_isolated");
+          handleUserIdentity(null);
         }
       } catch (err) {
-        console.error("BUDGET_SIDEBAR_AUTH_PARSE_EXCEPTION:", err);
+        console.error("BUDGET_SIDEBAR_AUTH_EXCEPTION:", err);
         setTenantEmail("fault_containment_mode");
       }
-    } else {
-      setTenantEmail("unauthenticated_session");
     }
+    syncBudgetProfile();
+
+    // 2. Real-time auth state channel connection
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    // Tear down channels cleanly on component unmount
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Safe design system defaults if live parent pipeline hooks are hydrating asynchronously

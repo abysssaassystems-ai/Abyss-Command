@@ -1,24 +1,51 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, Edit2, Grid, Award, List } from 'lucide-react';
+import { ChevronRight, Edit2, Grid, Award, List, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function MediaOverviewTab(): React.JSX.Element {
   const [profileName, setProfileName] = useState<string>("Authorized Client");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
-  // Load the authenticated tenant context dynamically from the session layer
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
-      try {
-        const parsed = JSON.parse(session);
-        if (parsed?.account_name) {
-          setProfileName(parsed.account_name);
-        }
-      } catch (err) {
-        console.error("OVERVIEW_SESSION_PARSE_ERROR:", err);
+    function handleUserIdentity(user: any) {
+      if (user) {
+        setTenantEmail(user.email || "isolated_session");
+        // Safe fallback ladder matching metadata blocks across authentication states
+        const namePayload = user.user_metadata?.account_name || user.user_metadata?.full_name || user.email;
+        setProfileName(namePayload || "Authorized Client");
+      } else {
+        setTenantEmail("unauthenticated_session");
+        setProfileName("Guest Client");
       }
     }
+
+    // 1. Initial signature validation pass
+    async function syncTenantSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
+        }
+      } catch (err) {
+        console.error("OVERVIEW_AUTH_HANDSHAKE_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    }
+    syncTenantSession();
+
+    // 2. Real-time auth subscriber channel observer line
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Structural metadata definitions aligned with your tracking records
@@ -55,18 +82,32 @@ export default function MediaOverviewTab(): React.JSX.Element {
         
         <div className="relative z-20 flex items-center gap-4 w-full">
           {/* Avatar frame holding letter signatures */}
-          <div className="w-16 h-16 rounded-full border-2 border-white bg-gradient-to-br from-purple-600 to-blue-600 overflow-hidden flex items-center justify-center text-lg font-black text-white shadow-sm">
-            {profileName.charAt(0).toUpperCase()}
+          <div className="w-16 h-16 rounded-full border-2 border-white bg-gradient-to-br from-purple-600 to-blue-600 overflow-hidden flex items-center justify-center text-lg font-black text-white shadow-sm flex-shrink-0">
+            {tenantEmail === "authenticating..." ? (
+              <Loader2 className="w-5 h-5 animate-spin text-white" />
+            ) : (
+              profileName.charAt(0).toUpperCase()
+            )}
           </div>
-          <div className="flex-1">
-            <h2 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-2">
-              {profileName}
-              <button type="button" className="p-1 rounded hover:bg-gray-100 transition-colors">
-                <Edit2 className="w-3.5 h-3.5 text-gray-400 hover:text-purple-600" />
-              </button>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-2 truncate">
+              {tenantEmail === "authenticating..." ? "Verifying Token Pass..." : profileName}
+              {tenantEmail !== "unauthenticated_session" && tenantEmail !== "authenticating..." && (
+                <button type="button" className="p-1 rounded hover:bg-gray-100 transition-colors flex-shrink-0">
+                  <Edit2 className="w-3.5 h-3.5 text-gray-400 hover:text-purple-600" />
+                </button>
+              )}
             </h2>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 px-2.5 py-0.5 bg-purple-50 rounded-md border border-purple-100 mt-1 inline-block">
-              Ecosystem Profile Active
+            <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-md border mt-1 inline-block ${
+              tenantEmail === "unauthenticated_session"
+                ? "bg-rose-50 text-rose-600 border-rose-100"
+                : "bg-purple-50 text-purple-600 border-purple-100"
+            }`}>
+              {tenantEmail === "authenticating..." 
+                ? "Securing Cryptographic Matrix..." 
+                : tenantEmail === "unauthenticated_session"
+                  ? "Unauthenticated Guest View"
+                  : "Ecosystem Profile Active"}
             </span>
           </div>
         </div>
@@ -152,7 +193,7 @@ export default function MediaOverviewTab(): React.JSX.Element {
               <img src={list.image} alt={list.title} className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:scale-102 transition-transform duration-300 group-hover:opacity-25" />
               <div className="absolute inset-0 bg-gradient-to-t from-white via-white/20 to-transparent z-10" />
               <div className="absolute bottom-4 left-4 right-4 z-20">
-                <h4 className="font-black text-gray-900 text-sm drop-shadow-sm group-hover:text-purple-600 transition-colors">{list.title}</h4>
+                <h4 className="font-black text-gray-900 text-sm drop-shadow-sm group-hover:text-purple-600 transition-colors text-left">{list.title}</h4>
               </div>
             </div>
           ))}
@@ -174,7 +215,7 @@ export default function MediaOverviewTab(): React.JSX.Element {
               <div className="w-full h-full rounded-[11px] overflow-hidden bg-white relative flex flex-col justify-end">
                 <img src={show.image} alt={show.name} className="absolute inset-0 w-full h-full object-cover group-hover:opacity-20 transition-opacity" />
                 <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-white to-transparent pt-8 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                  <p className="text-[10px] font-black tracking-tight text-gray-900 truncate">{show.name}</p>
+                  <p className="text-[10px] font-black tracking-tight text-gray-900 truncate text-left">{show.name}</p>
                 </div>
               </div>
             </div>

@@ -17,17 +17,70 @@ export default function GamingTab(): React.JSX.Element {
   const [subTab, setSubTab] = useState<'backlog' | 'playing'>('backlog');
   const [games, setGames] = useState<GameItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [userEmail, setUserEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
-  // Ingest authenticated session parameters to isolate user rows
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (!session) return;
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Core token authentication clearance pass
+    async function syncTenantSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
+        }
+      } catch (err) {
+        console.error("GAMES_AUTH_HANDSHAKE_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    }
+    syncTenantSession();
+
+    // 2. Real-time auth subscriber channel observer line
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Sync baseline historical database fields upon partition confirmation
+  useEffect(() => {
+    const isSecured = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
     
-    const email = JSON.parse(session).email;
-    setUserEmail(email);
-    fetchTenantGames(email);
-  }, [subTab]);
+    if (isSecured) {
+      fetchTenantGames(tenantEmail);
+    } else if (tenantEmail !== "authenticating...") {
+      applyMockFallback();
+    }
+  }, [tenantEmail, subTab]);
+
+  function applyMockFallback() {
+    setIsLoading(true);
+    if (subTab === 'backlog') {
+      setGames([
+        { id: '1', title: 'Elden Ring: Shadow of the Erdtree', platform: 'PC', hours: 42.5, image: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&auto=format&fit=crop&q=60', status: 'backlog' },
+        { id: '2', title: 'Cyberpunk 2077', platform: 'PS5', hours: 88.0, image: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400&auto=format&fit=crop&q=60', status: 'backlog' },
+        { id: '3', title: 'The Legend of Zelda: Tears of the Kingdom', platform: 'Switch', hours: 124.0, image: 'https://images.unsplash.com/photo-1566241477600-ac026ad43874?w=400&auto=format&fit=crop&q=60', status: 'backlog' },
+      ]);
+    } else {
+      setGames([]);
+    }
+    setIsLoading(false);
+  }
 
   // Read data rows strictly mapped to this client's profile identity
   async function fetchTenantGames(email: string) {
@@ -40,8 +93,7 @@ export default function GamingTab(): React.JSX.Element {
         .eq('status', subTab)
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
-        // Map database schema fields safely to UI interface properties
+      if (!error && data && data.length > 0) {
         const formattedGames = data.map((game: any) => ({
           id: game.id,
           title: game.title,
@@ -52,19 +104,11 @@ export default function GamingTab(): React.JSX.Element {
         }));
         setGames(formattedGames);
       } else {
-        // Fallback mock payload to preserve layout visualization if database is empty
-        if (subTab === 'backlog') {
-          setGames([
-            { id: '1', title: 'Elden Ring: Shadow of the Erdtree', platform: 'PC', hours: 42.5, image: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&auto=format&fit=crop&q=60', status: 'backlog' },
-            { id: '2', title: 'Cyberpunk 2077', platform: 'PS5', hours: 88.0, image: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400&auto=format&fit=crop&q=60', status: 'backlog' },
-            { id: '3', title: 'The Legend of Zelda: Tears of the Kingdom', platform: 'Switch', hours: 124.0, image: 'https://images.unsplash.com/photo-1566241477600-ac026ad43874?w=400&auto=format&fit=crop&q=60', status: 'backlog' },
-          ]);
-        } else {
-          setGames([]);
-        }
+        applyMockFallback();
       }
     } catch (err) {
       console.error("GAMES_FETCH_EXCEPTION:", err);
+      applyMockFallback();
     } finally {
       setIsLoading(false);
     }
@@ -72,7 +116,8 @@ export default function GamingTab(): React.JSX.Element {
 
   // Secure mutation routine advancing campaign lifecycle row state metrics safely
   const handleToggleCampaignState = async (gameId: string, currentStatus: 'backlog' | 'playing') => {
-    if (!userEmail) return;
+    const isSecured = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
+    if (!isSecured) return;
 
     const nextStatus = currentStatus === 'backlog' ? 'playing' : 'backlog';
 
@@ -83,11 +128,11 @@ export default function GamingTab(): React.JSX.Element {
       .from('tracked_games')
       .update({ status: nextStatus })
       .eq('id', gameId)
-      .eq('client_email', userEmail); // Strict tenant safety filter validations
+      .eq('client_email', tenantEmail); // Strict tenant safety filter validations
 
     if (error) {
       console.error("DATABASE_MUTATION_FAULT:", error.message);
-      fetchTenantGames(userEmail); // Clear changes locally if transaction breaks
+      fetchTenantGames(tenantEmail); // Clear changes locally if transaction breaks
     }
   };
 
@@ -98,8 +143,9 @@ export default function GamingTab(): React.JSX.Element {
       <div className="flex bg-gray-50 border border-gray-200 p-1 rounded-xl">
         <button
           type="button"
+          disabled={tenantEmail === "authenticating..."}
           onClick={() => setSubTab('backlog')}
-          className={`flex-1 py-2.5 text-center text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
+          className={`flex-1 py-2.5 text-center text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
             subTab === 'backlog'
               ? 'bg-white text-purple-600 border border-gray-100 shadow-sm font-black'
               : 'text-gray-400 hover:text-gray-700'
@@ -109,8 +155,9 @@ export default function GamingTab(): React.JSX.Element {
         </button>
         <button
           type="button"
+          disabled={tenantEmail === "authenticating..."}
           onClick={() => setSubTab('playing')}
-          className={`flex-1 py-2.5 text-center text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
+          className={`flex-1 py-2.5 text-center text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
             subTab === 'playing'
               ? 'bg-white text-purple-600 border border-gray-100 shadow-sm font-black'
               : 'text-gray-400 hover:text-gray-700'
@@ -176,11 +223,13 @@ export default function GamingTab(): React.JSX.Element {
                 
                 {/* Dynamic Overlay Menu Interfaces */}
                 <div className="relative z-20 space-y-2">
-                  <h4 className="font-black text-xs text-gray-900 line-clamp-2 leading-tight">{game.title}</h4>
+                  <h4 className="font-black text-xs text-gray-900 line-clamp-2 leading-tight text-left">{game.title}</h4>
                   <button 
                     type="button"
+                    disabled={tenantEmail === "unauthenticated_session"}
                     onClick={() => handleToggleCampaignState(game.id, game.status)}
-                    className="w-full py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 shadow-sm hover:opacity-95 transition-all"
+                    className="w-full py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 shadow-sm hover:opacity-95 transition-all disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed"
+                    title={tenantEmail === "unauthenticated_session" ? "Login required to shift tracking bounds" : "Modify campaign status"}
                   >
                     {subTab === 'backlog' ? '🚀 Launch Session' : '📥 Bench Campaign'}
                   </button>

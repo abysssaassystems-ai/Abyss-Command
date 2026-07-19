@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { 
   Scale, 
   Moon, 
@@ -67,7 +68,7 @@ export interface SimulationResultPayload {
 
 export default function GoalsTab(): React.JSX.Element {
   // --- MULTI-TENANT SECURE SESSION STATE ---
-  const [tenantEmail, setTenantEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
   const [activeStep, setActiveStep] = useState<number>(1);
   const [isSimulated, setIsSimulated] = useState<boolean>(false);
   const [currentSubView, setCurrentSubView] = useState<"intake" | "results">("intake");
@@ -95,15 +96,40 @@ export default function GoalsTab(): React.JSX.Element {
 
   // Securely resolve current tenant contextual parameters
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
-      try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) setTenantEmail(parsed.email);
-      } catch (err) {
-        console.error("GOALS_AUTH_HYDRATION_EXCEPTION:", err);
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
       }
     }
+
+    // 1. Initial secure token signature validation pass
+    async function verifySession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
+        }
+      } catch (err) {
+        console.error("GOALS_AUTH_HYDRATION_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    }
+    verifySession();
+
+    // 2. Real-time session sync guard channel connection
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const lbsToKg = (lbs: number) => parseFloat((lbs * 0.45359237).toFixed(1));
@@ -208,7 +234,7 @@ export default function GoalsTab(): React.JSX.Element {
 
         simulatedWeight += weeklyWeightDeltaKg;
 
-        if (caloricDeficitSurplus < 0) {
+        if (caloricDeficitSurplus < 0 && runningMetabolicAdaptation < Math.abs(caloricDeficitSurplus)) {
           runningMetabolicAdaptation += Math.abs(caloricDeficitSurplus) * 0.015;
         }
 
@@ -337,7 +363,7 @@ export default function GoalsTab(): React.JSX.Element {
             <div className="pt-4">
               <button
                 onClick={runKineticSimulationModel}
-                disabled={isLoadingSim}
+                disabled={isLoadingSim || tenantEmail === "unauthenticated_session"}
                 className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:opacity-95 text-white font-mono font-black text-xs uppercase tracking-widest py-3.5 rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
               >
                 {isLoadingSim ? (
@@ -345,6 +371,8 @@ export default function GoalsTab(): React.JSX.Element {
                     <Loader2 className="w-4 h-4 animate-spin text-white" />
                     <span>Computing Thermodynamic Curves...</span>
                   </>
+                ) : tenantEmail === "unauthenticated_session" ? (
+                  <span>Console Session Locked</span>
                 ) : (
                   <>
                     <Zap className="w-4 h-4 text-purple-200 stroke-[2.5]" />
@@ -486,7 +514,7 @@ export default function GoalsTab(): React.JSX.Element {
                           <input 
                             type="number" 
                             value={biometrics.avgWaterOunces} 
-                            onChange={(e) => setBiometrics({ ...biometrics, avgWaterOunces: parseInt(e.target.value) || 0 })}
+                            onChange={(e) => setBiometrics({ ...biometrics, avgWaterOunces: parseInt(e.target.value, 10) || 0 })}
                             className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs font-black font-mono outline-none focus:border-purple-500"
                           />
                           <span className="absolute right-4 text-[10px] font-mono font-black text-gray-400 uppercase"><Droplets className="w-3 h-3 text-blue-400 inline" /> fl oz</span>
@@ -594,7 +622,7 @@ export default function GoalsTab(): React.JSX.Element {
                 <button
                   type="button"
                   onClick={runKineticSimulationModel}
-                  disabled={isLoadingSim}
+                  disabled={isLoadingSim || tenantEmail === "unauthenticated_session"}
                   className="px-6 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl text-xs font-mono font-black uppercase tracking-widest shadow-md hover:opacity-95 cursor-pointer flex items-center gap-1.5"
                 >
                   {isLoadingSim ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-purple-200 stroke-[2.5]" />}

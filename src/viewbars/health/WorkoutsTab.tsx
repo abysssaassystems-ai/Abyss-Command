@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { 
   Activity, 
   Flame, 
@@ -11,14 +12,11 @@ import {
   Zap, 
   History, 
   Plus, 
-  Trash2, 
   Scale, 
   Check, 
   ChevronDown, 
   X,
-  Sparkles,
-  Layers,
-  TrendingUp
+  Layers
 } from "lucide-react";
 
 export type ExerciseCategory = "strength" | "hypertrophy" | "cardio" | "mobility";
@@ -153,13 +151,6 @@ const PREBUILT_SYSTEM_ROUTINES: WorkoutRoutineTemplate[] = [
           { id: "p1s2", reps: 8, weightLbs: 185, isCompleted: false },
           { id: "p1s3", reps: 6, weightLbs: 225, isCompleted: false }
         ]
-      },
-      {
-        id: "node_p2", exerciseId: "exe_sh_press_dumbbell", exerciseName: "Seated Dumbbell Shoulder Press", category: "hypertrophy", primaryMuscle: "shoulders", metValue: 5.8,
-        sets: [
-          { id: "p2s1", reps: 12, weightLbs: 50, isCompleted: false },
-          { id: "p2s2", reps: 10, weightLbs: 60, isCompleted: false }
-        ]
       }
     ]
   }
@@ -169,7 +160,7 @@ type SubTabID = "templates" | "browse" | "active" | "history";
 
 export default function WorkoutsTab(): React.JSX.Element {
   // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
-  const [tenantEmail, setTenantEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
   const [currentSubTab, setCurrentSubTab] = useState<SubTabID>("templates");
 
   // Linked Budget Metrics Matrix
@@ -189,7 +180,7 @@ export default function WorkoutsTab(): React.JSX.Element {
   const [userWeightLbs, setUserWeightLbs] = useState<string>("181"); 
 
   const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseDefinition[]>(MASTER_BUILTIN_EXERCISES);
-  const [routineTemplates, setRoutineTemplates] = useState<WorkoutRoutineTemplate[]>(PREBUILT_SYSTEM_ROUTINES);
+  const [routineTemplates] = useState<WorkoutRoutineTemplate[]>(PREBUILT_SYSTEM_ROUTINES);
   const [historicalLogs, setHistoricalLogs] = useState<HistoricalWorkoutLog[]>([
     {
       id: "hist_1",
@@ -226,25 +217,50 @@ export default function WorkoutsTab(): React.JSX.Element {
 
   // Secure user space context provisioning
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+        const cachedWeight = localStorage.getItem(`workout_weight_${user.email}`);
+        if (cachedWeight) setUserWeightLbs(cachedWeight);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Core token authentication clearance check loop
+    async function syncTenantSession() {
       try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setTenantEmail(parsed.email);
-          const cachedWeight = localStorage.getItem(`workout_weight_${parsed.email}`);
-          if (cachedWeight) setUserWeightLbs(cachedWeight);
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
         }
       } catch (err) {
         console.error("WORKOUTS_AUTH_INIT_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
       }
     }
+    syncTenantSession();
+
+    // 2. Open channel line real-time listener subscription 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  const isSecuredTenant = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
 
   // Update localized state metrics across changes
   const handleWeightChange = (val: string) => {
     setUserWeightLbs(val);
-    if (tenantEmail && val) {
+    if (isSecuredTenant && val) {
       localStorage.setItem(`workout_weight_${tenantEmail}`, val);
     }
   };
@@ -291,6 +307,7 @@ export default function WorkoutsTab(): React.JSX.Element {
   };
 
   const handleCommitQuickLoggedExercise = (ex: ExerciseDefinition) => {
+    if (tenantEmail === "unauthenticated_session") return;
     const finalBurn = calculateLiveInlineBurn(ex.metValue, ex.category);
     
     const quickLogNode: ExerciseLogNode = {
@@ -329,7 +346,7 @@ export default function WorkoutsTab(): React.JSX.Element {
 
   const handleInsertCustomExercise = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newExeName.trim()) return;
+    if (!newExeName.trim() || tenantEmail === "unauthenticated_session") return;
 
     const newExercise: ExerciseDefinition = {
       id: `exe_cust_${Date.now()}`,
@@ -348,6 +365,7 @@ export default function WorkoutsTab(): React.JSX.Element {
   };
 
   const handleLaunchLiveSession = (template: WorkoutRoutineTemplate) => {
+    if (tenantEmail === "unauthenticated_session") return;
     const sessionClone: WorkoutRoutineTemplate = {
       ...template,
       id: `session_run_${Date.now()}`,
@@ -362,6 +380,7 @@ export default function WorkoutsTab(): React.JSX.Element {
   };
 
   const handleLaunchEmptyLiveSession = () => {
+    if (tenantEmail === "unauthenticated_session") return;
     setActiveWorkout({
       id: `session_run_${Date.now()}`,
       title: "Custom Fitness Allocation Window",
@@ -372,7 +391,7 @@ export default function WorkoutsTab(): React.JSX.Element {
   };
 
   const handleInjectExerciseToActiveSession = (exercise: ExerciseDefinition) => {
-    if (!activeWorkout) return;
+    if (!activeWorkout || tenantEmail === "unauthenticated_session") return;
     const newNode: ExerciseLogNode = {
       id: `node_run_${Date.now()}`,
       exerciseId: exercise.id,
@@ -471,9 +490,10 @@ export default function WorkoutsTab(): React.JSX.Element {
           <span className="text-[9px] uppercase font-mono font-black text-gray-400 tracking-wider">Mass Baseline:</span>
           <input 
             type="number" 
+            disabled={tenantEmail === "unauthenticated_session"}
             value={userWeightLbs}
             onChange={e => handleWeightChange(e.target.value)}
-            className="w-12 bg-transparent text-xs font-mono font-black text-purple-600 text-center p-0 border-none focus:ring-0 outline-none text-base sm:text-xs"
+            className="w-12 bg-transparent text-xs font-mono font-black text-purple-600 text-center p-0 border-none focus:ring-0 outline-none text-base sm:text-xs disabled:opacity-40"
           />
           <span className="text-[9px] font-mono font-bold text-gray-400 uppercase">lbs</span>
         </div>
@@ -555,8 +575,9 @@ export default function WorkoutsTab(): React.JSX.Element {
               </div>
               <button
                 type="button"
+                disabled={tenantEmail === "unauthenticated_session"}
                 onClick={() => handleLaunchEmptyLiveSession()}
-                className="bg-purple-600 hover:bg-purple-700 border border-purple-700 text-white font-mono font-black text-[10px] uppercase tracking-wider px-4 h-11 rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                className="bg-purple-600 hover:bg-purple-700 border border-purple-700 text-white font-mono font-black text-[10px] uppercase tracking-wider px-4 h-11 rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[3]" /> Custom Workout
               </button>
@@ -579,8 +600,9 @@ export default function WorkoutsTab(): React.JSX.Element {
                   <div className="mt-6 pt-3 border-t border-gray-100 flex justify-end">
                     <button
                       type="button"
+                      disabled={tenantEmail === "unauthenticated_session"}
                       onClick={() => handleLaunchLiveSession(rtn)}
-                      className="bg-gray-900 hover:bg-gray-800 text-white font-mono font-black uppercase text-[10px] tracking-wider px-4 h-11 rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1"
+                      className="bg-gray-900 hover:bg-gray-800 text-white font-mono font-black uppercase text-[10px] tracking-wider px-4 h-11 rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Initialize Session
                     </button>
@@ -601,8 +623,9 @@ export default function WorkoutsTab(): React.JSX.Element {
               </div>
               <button
                 type="button"
+                disabled={tenantEmail === "unauthenticated_session"}
                 onClick={() => setShowCustomModal(true)}
-                className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono font-black text-[10px] uppercase tracking-wider px-4 h-11 rounded-xl hover:bg-emerald-100/50 transition-all shadow-xs cursor-pointer flex items-center gap-1"
+                className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono font-black text-[10px] uppercase tracking-wider px-4 h-11 rounded-xl hover:bg-emerald-100/50 transition-all shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[3]" /> Add Custom
               </button>
@@ -613,16 +636,18 @@ export default function WorkoutsTab(): React.JSX.Element {
                 <Search className="w-4 h-4 text-gray-300 mr-2" />
                 <input 
                   type="text" 
-                  placeholder="Query exercise names or targeting groups..." 
+                  disabled={tenantEmail === "unauthenticated_session"}
+                  placeholder={tenantEmail === "unauthenticated_session" ? "Session locked" : "Query exercise names or targeting groups..."} 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-transparent py-2.5 font-sans font-semibold text-gray-800 placeholder-gray-300 w-full outline-none text-base sm:text-xs"
+                  className="bg-transparent py-2.5 font-sans font-semibold text-gray-800 placeholder-gray-300 w-full outline-none text-base sm:text-xs disabled:opacity-50"
                 />
               </div>
               <select
                 value={filterMuscle}
+                disabled={tenantEmail === "unauthenticated_session"}
                 onChange={(e) => setFilterMuscle(e.target.value as any)}
-                className="bg-gray-50 border border-gray-200 rounded-xl px-3 h-11 font-mono text-[10px] font-black text-gray-500 uppercase tracking-wider outline-none cursor-pointer pr-8 shrink-0 focus:border-purple-500"
+                className="bg-gray-50 border border-gray-200 rounded-xl px-3 h-11 font-mono text-[10px] font-black text-gray-500 uppercase tracking-wider outline-none cursor-pointer pr-8 shrink-0 focus:border-purple-500 disabled:opacity-40"
               >
                 <option value="all">All Muscle Pipelines</option>
                 <option value="chest">Chest Modules</option>
@@ -655,13 +680,16 @@ export default function WorkoutsTab(): React.JSX.Element {
                     >
                       <div 
                         onClick={() => {
+                          if (tenantEmail === "unauthenticated_session") return;
                           setExpandedExerciseId(isExpanded ? null : ex.id);
                           setInlineReps("10");
                           setInlineWeight("135");
                           setInlineMinutes("20");
                           setInlineSpeed("6.0"); 
                         }}
-                        className="p-4 flex justify-between items-center cursor-pointer select-none h-14"
+                        className={`p-4 flex justify-between items-center select-none h-14 ${
+                          tenantEmail === "unauthenticated_session" ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+                        }`}
                       >
                         <div className="min-w-0 flex-1 pr-3">
                           <div className="flex items-center gap-2">
@@ -791,8 +819,9 @@ export default function WorkoutsTab(): React.JSX.Element {
                 <p className="text-xs font-medium max-w-xs mx-auto mt-1 leading-relaxed">No tracking frames are running. Boot a routine template or initiate an abstract canvas below.</p>
                 <button 
                   type="button" 
+                  disabled={tenantEmail === "unauthenticated_session"}
                   onClick={() => handleLaunchEmptyLiveSession()} 
-                  className="mt-5 bg-purple-600 text-white font-mono font-black uppercase tracking-wider text-[10px] px-5 h-11 rounded-xl hover:bg-purple-700 shadow-xs cursor-pointer"
+                  className="mt-5 bg-purple-600 text-white font-mono font-black uppercase tracking-wider text-[10px] px-5 h-11 rounded-xl hover:bg-purple-700 shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Spawn Clean Workspace
                 </button>

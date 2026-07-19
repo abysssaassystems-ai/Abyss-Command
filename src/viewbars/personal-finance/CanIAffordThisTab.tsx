@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { 
   Search, 
   MapPin, 
@@ -52,12 +53,51 @@ export default function CanIAffordThisTab({
   const [catalogItems, setCatalogItems] = useState<CatalogProductNode[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState<boolean>(false);
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
   // --- GEOLOCATION STATE ENGINES ---
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [locationStatus, setLocationStatus] = useState<"idle" | "prompting" | "secured" | "denied">("idle");
   const [locationError, setLocationError] = useState<string>("");
+
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
+  useEffect(() => {
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    async function syncTenantSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
+        }
+      } catch (err) {
+        console.error("AFFORDABILITY_AUTH_HANDSHAKE_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    }
+    syncTenantSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const isSecuredTenant = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
 
   // --- HTML5 GEOLOCATION API HANDSHAKE ---
   const requestUserLocationToken = () => {
@@ -91,15 +131,20 @@ export default function CanIAffordThisTab({
 
   // --- QUERY DEBOUNCE INGESTION CONTROLLER ---
   useEffect(() => {
+    if (!isSecuredTenant) {
+      setCatalogItems([]);
+      return;
+    }
+
     const delayDebounceLoader = setTimeout(async () => {
       setIsLoadingCatalog(true);
       try {
-        // Appends coordinates metrics straight into the query parameters stream if verified
         const latParam = latitude ? `&lat=${latitude}` : "";
         const lonParam = longitude ? `&lon=${longitude}` : "";
         
+        // Appends cryptographically validated tenant information inside query boundaries
         const response = await fetch(
-          `/api/catalog?q=${encodeURIComponent(searchQuery)}${latParam}${lonParam}`
+          `/api/catalog?q=${encodeURIComponent(searchQuery)}${latParam}${lonParam}&tenant=${encodeURIComponent(tenantEmail)}`
         );
         
         if (response.ok) {
@@ -114,7 +159,7 @@ export default function CanIAffordThisTab({
     }, 300);
 
     return () => clearTimeout(delayDebounceLoader);
-  }, [searchQuery, latitude, longitude]);
+  }, [searchQuery, latitude, longitude, tenantEmail, isSecuredTenant]);
 
   // --- ACTION ANCHOR HUBS ---
   const handleApplyPriceToSimulator = (targetPrice: number) => {
@@ -132,18 +177,19 @@ export default function CanIAffordThisTab({
           <h3 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-2">
             <Calculator className="w-5 h-5 text-purple-600" /> Capital Allocation Simulator
           </h3>
-          <p className="text-xs text-gray-400 font-medium mt-0.5">
+          <p className="text-xs text-gray-400 font-medium mt-0.5 text-left">
             Cross-examine luxury acquisition items instantly against systemic liquid protection boundaries and live recurring liabilities.
           </p>
         </div>
 
-        {/* GEOLOCATION ACTION DECK CAPABILITY CONTROL */}
+        {/* GEOLOCATION ACTION DECK CONTROL */}
         <div className="shrink-0">
           {locationStatus === "idle" && (
             <button
               type="button"
+              disabled={!isSecuredTenant}
               onClick={requestUserLocationToken}
-              className="text-[10px] font-mono font-black uppercase tracking-wider bg-gray-50 hover:bg-gray-100 text-gray-600 px-3 py-2.5 rounded-xl transition-all border border-gray-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
+              className="text-[10px] font-mono font-black uppercase tracking-wider bg-gray-50 hover:bg-gray-100 text-gray-600 px-3 py-2.5 rounded-xl transition-all border border-gray-200 flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <MapPin className="w-3.5 h-3.5 text-purple-600" /> Scan Proximity Deals
             </button>
@@ -176,7 +222,7 @@ export default function CanIAffordThisTab({
         
         {/* INTERACTIVE INPUT CALCULATOR DECK (Left 2 Columns) */}
         <div className="lg:col-span-2 space-y-3">
-          <span className="text-[10px] font-mono font-black text-gray-400 uppercase tracking-wider block ml-1">
+          <span className="text-[10px] font-mono font-black text-gray-400 uppercase tracking-wider block text-left ml-1">
             Configure Position Parameters
           </span>
           
@@ -190,21 +236,23 @@ export default function CanIAffordThisTab({
                     type="number" 
                     step="any"
                     required
-                    placeholder="Custom targeted cost threshold..." 
+                    disabled={!isSecuredTenant}
+                    placeholder={tenantEmail === "authenticating..." ? "Verifying Token Clearance..." : "Custom targeted cost threshold..."}
                     value={purchaseCost}
                     onChange={(e) => setPurchaseCost(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 h-12 text-sm font-bold text-gray-800 outline-none focus:border-purple-500 focus:bg-white focus:ring-2 focus:ring-purple-500/10 transition-all font-mono tabular-nums shadow-inner"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 h-12 text-sm font-bold text-gray-800 outline-none focus:border-purple-500 focus:bg-white focus:ring-2 focus:ring-purple-500/10 transition-all font-mono tabular-nums shadow-inner disabled:opacity-60"
                   />
                 </div>
                 <button 
                   type="submit" 
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:opacity-95 text-white font-mono font-black h-11 rounded-xl tracking-wider text-xs uppercase shadow-sm transition-all cursor-pointer active:scale-[0.99]"
+                  disabled={!isSecuredTenant}
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:opacity-95 text-white font-mono font-black h-11 rounded-xl tracking-wider text-xs uppercase shadow-sm transition-all cursor-pointer active:scale-[0.99] disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed"
                 >
                   Compute Operational Verdict
                 </button>
               </form>
 
-              {purchaseVerdict && (
+              {purchaseVerdict && isSecuredTenant && (
                 <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 animate-fadeIn text-left space-y-1.5">
                   <span className={`text-xs font-mono font-black uppercase tracking-wider flex items-center gap-1.5 ${
                     purchaseVerdict.decision.includes("Approved") 
@@ -229,7 +277,7 @@ export default function CanIAffordThisTab({
 
         {/* EXTENSIVE PRODUCT CATALOG HUB (Right 3 Columns) */}
         <div className="lg:col-span-3 space-y-3">
-          <span className="text-[10px] font-mono font-black text-gray-400 uppercase tracking-wider block ml-1">
+          <span className="text-[10px] font-mono font-black text-gray-400 uppercase tracking-wider block text-left ml-1">
             Global Product Schema Registry
           </span>
           
@@ -239,15 +287,25 @@ export default function CanIAffordThisTab({
               <Search className="absolute left-4 text-gray-400 w-4 h-4" />
               <input 
                 type="text"
-                placeholder="Search premium assets, infrastructure schemas, or brands..."
+                disabled={!isSecuredTenant}
+                placeholder={tenantEmail === "unauthenticated_session" ? "Authentication required to query index records" : "Search premium assets, infrastructure schemas, or brands..."}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 h-11 text-xs font-bold text-gray-800 outline-none focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/10 transition-all shadow-inner"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 h-11 text-xs font-bold text-gray-800 outline-none focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/10 transition-all shadow-inner disabled:opacity-60"
               />
             </div>
 
             <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-              {isLoadingCatalog ? (
+              {tenantEmail === "authenticating..." ? (
+                <div className="py-12 text-center text-xs font-mono font-bold text-purple-600 uppercase tracking-widest flex items-center justify-center gap-2 animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Verifying Secure Credentials...
+                </div>
+              ) : tenantEmail === "unauthenticated_session" ? (
+                <div className="py-12 text-center text-xs font-mono font-bold text-rose-500 flex flex-col items-center justify-center gap-1.5">
+                  <AlertCircle className="w-5 h-5 text-rose-400" />
+                  <span>SECURE INDEX ACQUISITION RESTRICTED</span>
+                </div>
+              ) : isLoadingCatalog ? (
                 <div className="py-12 text-center text-xs font-mono font-bold text-purple-600 uppercase tracking-widest flex items-center justify-center gap-2 animate-pulse">
                   <Loader2 className="w-4 h-4 animate-spin" /> Polling ledger index keys...
                 </div>
@@ -265,7 +323,7 @@ export default function CanIAffordThisTab({
                           : "bg-white border-gray-100 hover:border-gray-200 shadow-xs"
                       }`}
                     >
-                      <div className="min-w-0 pr-4">
+                      <div className="min-w-0 pr-4 text-left">
                         <span className="text-[8px] font-mono font-black uppercase px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-500">
                           {prod.category}
                         </span>
@@ -287,7 +345,7 @@ export default function CanIAffordThisTab({
               )}
             </div>
 
-            {activeSelectedProduct && (
+            {activeSelectedProduct && isSecuredTenant && (
               <div className="border-t border-gray-100 pt-4 animate-slideDown space-y-4 text-left">
                 <div className="bg-blue-50/30 border border-blue-100 p-4 rounded-xl flex items-start gap-3">
                   <Cpu className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
@@ -309,7 +367,7 @@ export default function CanIAffordThisTab({
                   <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 bg-gray-50/20 shadow-sm">
                     {activeSelectedProduct.localDeals.map((deal, idx) => (
                       <div key={idx} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-gray-50/60 transition-colors">
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 text-left">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-black text-gray-900 tracking-tight">{deal.retailer}</span>
                             <span className="text-[9px] text-gray-400 font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-gray-100">

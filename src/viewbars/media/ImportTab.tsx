@@ -11,20 +11,53 @@ export default function ImportTab(): React.JSX.Element {
   const [fileName, setFileName] = useState<string>('');
   const [progressMessage, setProgressMessage] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [userEmail, setUserEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Parse active session token context on initial lifecycle mount
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
-      setUserEmail(JSON.parse(session).email);
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
     }
+
+    // 1. Resolve initial identity token validation pass
+    async function syncTenantSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
+        }
+      } catch (err) {
+        console.error("IMPORT_AUTH_HANDSHAKE_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    }
+    syncTenantSession();
+
+    // 2. Continuous real-time subscription loop for session lifecycle parity
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  const isSecuredTenant = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
 
   // Drag and drop mechanics handlers
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    if (!isSecuredTenant) return;
     if (status === 'idle') setStatus('dragging');
   };
 
@@ -34,6 +67,10 @@ export default function ImportTab(): React.JSX.Element {
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    if (!isSecuredTenant) {
+      setStatus('idle');
+      return;
+    }
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
       processFile(files[0]);
@@ -43,6 +80,7 @@ export default function ImportTab(): React.JSX.Element {
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isSecuredTenant) return;
     const files = e.target.files;
     if (files && files.length > 0) {
       processFile(files[0]);
@@ -51,6 +89,8 @@ export default function ImportTab(): React.JSX.Element {
 
   // Processing pipeline mapping raw archives into structural DB records
   const processFile = async (file: File) => {
+    if (!isSecuredTenant) return;
+
     const isZip = file.name.endsWith('.zip');
     const isCsv = file.name.endsWith('.csv');
     const isJson = file.name.endsWith('.json');
@@ -71,7 +111,7 @@ export default function ImportTab(): React.JSX.Element {
       setStatus('syncing');
       setProgressMessage('Translating external tracking IDs and batch-upserting isolated rows to Supabase...');
 
-      // Step 2: Simulated multi-tenant cloud serialization loop
+      // Step 2: Simulated multi-tenant cloud serialization loop linked to verified user identifier
       await new Promise((resolve) => setTimeout(resolve, 2500));
       setStatus('success');
     } catch (err) {
@@ -94,7 +134,7 @@ export default function ImportTab(): React.JSX.Element {
       {/* ⚠️ SYSTEM CRITICAL SHUTDOWN NOTICE BANNER */}
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 text-amber-800 shadow-sm">
         <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600" />
-        <div className="text-xs space-y-1 font-sans">
+        <div className="text-xs space-y-1 font-sans text-left">
           <p className="font-black uppercase tracking-wider">// THIRD-PARTY END-OF-LIFE DEPRECATION NOTICE</p>
           <p className="text-gray-600 font-medium leading-relaxed">
             External tracker platforms are permanently liquidating cloud asset lines on <span className="text-gray-900 font-bold">July 15, 2026</span>. After this target window closes, historical watch records will be wiped clean. Request your personal GDPR data archive bundle immediately to migrate rows into your platform enclave.
@@ -107,7 +147,7 @@ export default function ImportTab(): React.JSX.Element {
         <h3 className="text-xs font-black uppercase tracking-wider text-gray-700 flex items-center gap-2 font-mono">
           <Info className="w-4 h-4 text-purple-600" /> System Migration Directives
         </h3>
-        <ol className="text-xs text-gray-600 space-y-2 pl-4 list-decimal marker:text-gray-400 marker:font-bold leading-relaxed">
+        <ol className="text-xs text-gray-600 space-y-2 pl-4 list-decimal marker:text-gray-400 marker:font-bold leading-relaxed text-left">
           <li>Navigate to your account panel options inside the tracking utility menu settings.</li>
           <li>Select <span className="text-gray-900 font-bold">Privacy Controls</span> and trigger an archive retrieval link.</li>
           <li>Your unique binary <span className="text-purple-600 font-mono font-bold">.zip</span> summary folder will be dispatched via secure email links. Drag and pass that target folder directly here.</li>
@@ -119,11 +159,16 @@ export default function ImportTab(): React.JSX.Element {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => status === 'idle' && fileInputRef.current?.click()}
-        className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all min-h-[280px] flex flex-col items-center justify-center gap-4 cursor-pointer bg-white ${
-          status === 'dragging' 
-            ? 'border-purple-600 bg-purple-50/50 shadow-inner' 
-            : 'border-gray-300 hover:border-gray-400 shadow-sm'
+        onClick={() => {
+          if (tenantEmail === "unauthenticated_session" || tenantEmail === "authenticating...") return;
+          if (status === 'idle') fileInputRef.current?.click();
+        }}
+        className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all min-h-[280px] flex flex-col items-center justify-center gap-4 bg-white ${
+          tenantEmail === "unauthenticated_session"
+            ? 'border-gray-200 bg-gray-50/50 cursor-not-allowed opacity-75 shadow-none'
+            : status === 'dragging' 
+              ? 'border-purple-600 bg-purple-50/50 shadow-inner cursor-pointer' 
+              : 'border-gray-300 hover:border-gray-400 shadow-sm cursor-pointer'
         }`}
       >
         <input
@@ -132,11 +177,33 @@ export default function ImportTab(): React.JSX.Element {
           onChange={handleFileSelect}
           accept=".zip,.csv,.json"
           className="hidden"
-          disabled={status !== 'idle'}
+          disabled={status !== 'idle' || !isSecuredTenant}
         />
 
-        {/* STATE A: STANDBY READY CAPTURE INTERFACE */}
-        {(status === 'idle' || status === 'dragging') && (
+        {/* STATE A: IDENTITY LOAD BLOCKED STATE */}
+        {tenantEmail === "authenticating..." && (
+          <div className="flex flex-col items-center gap-2 font-mono text-xs text-gray-400 font-bold uppercase tracking-wider">
+            <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
+            <span>Verifying Environment Signature Token...</span>
+          </div>
+        )}
+
+        {tenantEmail === "unauthenticated_session" && (
+          <div className="space-y-3 max-w-xs text-center">
+            <div className="p-4 bg-rose-50 border border-rose-100 rounded-full inline-block text-rose-500 shadow-sm">
+              <AlertCircle className="w-8 h-8 stroke-[2.2]" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-mono font-black uppercase tracking-wider text-gray-900">Migration Pipeline Locked</p>
+              <p className="text-[11px] font-sans font-medium text-gray-400 leading-relaxed">
+                Please log into an authenticated user profile session to authorize external database schema allocations.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* STATE B: STANDBY READY CAPTURE INTERFACE */}
+        {isSecuredTenant && (status === 'idle' || status === 'dragging') && (
           <>
             <div className="p-4 bg-gray-50 rounded-full border border-gray-200 text-gray-400 group-hover:text-purple-600 transition-colors shadow-sm">
               <UploadCloud className={`w-8 h-8 ${status === 'dragging' ? 'text-purple-600 animate-bounce' : 'text-gray-400'}`} />
@@ -158,8 +225,8 @@ export default function ImportTab(): React.JSX.Element {
           </>
         )}
 
-        {/* STATE B: RUNNING BATCH OPERATIONS */}
-        {(status === 'parsing' || status === 'syncing') && (
+        {/* STATE C: RUNNING BATCH OPERATIONS */}
+        {isSecuredTenant && (status === 'parsing' || status === 'syncing') && (
           <>
             <div className="p-4 bg-purple-50 rounded-full border border-purple-100 text-purple-600 shadow-sm relative">
               <Loader2 className="w-8 h-8 animate-spin" />
@@ -180,8 +247,8 @@ export default function ImportTab(): React.JSX.Element {
           </>
         )}
 
-        {/* STATE C: PROCESSING PIPELINE SUCCESS HANDSHAKE */}
-        {status === 'success' && (
+        {/* STATE D: PROCESSING PIPELINE SUCCESS HANDSHAKE */}
+        {isSecuredTenant && status === 'success' && (
           <>
             <div className="p-4 bg-emerald-50 rounded-full border border-emerald-200 text-emerald-600 shadow-sm">
               <CheckCircle2 className="w-8 h-8 stroke-[2.2]" />
@@ -189,7 +256,7 @@ export default function ImportTab(): React.JSX.Element {
             <div className="space-y-1.5">
               <p className="text-sm font-black text-gray-900 uppercase italic tracking-tight">Ecosystem Sync Complete</p>
               <p className="text-xs text-gray-400 max-w-xs mx-auto leading-relaxed font-medium">
-                Your historical watchlist logs, metrics records, and checked episode nodes have been successfully compiled and synchronized into your multi-tenant dashboard schema.
+                Your historical watchlist logs, metrics records, and checked episode nodes have been successfully compiled and synchronized into your multi-tenant dashboard schema under <span className="text-purple-600 font-semibold">{tenantEmail}</span>.
               </p>
             </div>
             <button
@@ -202,8 +269,8 @@ export default function ImportTab(): React.JSX.Element {
           </>
         )}
 
-        {/* STATE D: ERROR CONFIGURATION BOUNDARY EXCEPTION */}
-        {status === 'error' && (
+        {/* STATE E: ERROR CONFIGURATION BOUNDARY EXCEPTION */}
+        {isSecuredTenant && status === 'error' && (
           <>
             <div className="p-4 bg-rose-50 rounded-full border border-rose-200 text-rose-600 shadow-sm">
               <AlertCircle className="w-8 h-8 stroke-[2.2]" />

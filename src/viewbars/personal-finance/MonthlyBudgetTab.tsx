@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import { 
   PieChart, 
   RefreshCw, 
@@ -16,7 +17,8 @@ import {
   SlidersHorizontal,
   FolderPlus,
   Loader2,
-  DollarSign
+  DollarSign,
+  AlertCircle
 } from "lucide-react";
 
 interface BudgetNode {
@@ -35,8 +37,8 @@ interface StagedCategoryNode {
 }
 
 export default function MonthlyBudgetTab(): React.JSX.Element {
-  // --- MULTI-TENANT SESSION HANDSHAKE ---
-  const [userEmail, setUserEmail] = useState<string>("");
+  // --- MULTI-TENANT SESSION HANDSHAKE STATE ---
+  const [userEmail, setUserEmail] = useState<string>("authenticating...");
   const [categories, setCategories] = useState<BudgetNode[]>([]);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [showAddForm, setShowAddForm] = useState<boolean>(false);
@@ -69,20 +71,43 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
   const [stageType, setStageType] = useState<"basic" | "category">("category");
   const [stageKeywords, setStageKeywords] = useState<string>("");
 
-  // Hydrate tenant email from browser storage space securely
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
   useEffect(() => {
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
-      try {
-        const parsed = JSON.parse(session);
-        if (parsed?.email) {
-          setUserEmail(parsed.email);
-        }
-      } catch (err) {
-        console.error("BUDGET_AUTH_HYDRATION_EXCEPTION:", err);
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setUserEmail(user.email);
+      } else if (user) {
+        setUserEmail("anonymous_isolated");
+      } else {
+        setUserEmail("unauthenticated_session");
       }
     }
+
+    async function syncTenantSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
+        }
+      } catch (err) {
+        console.error("BUDGET_AUTH_HANDSHAKE_EXCEPTION:", err);
+        setUserEmail("fault_containment_mode");
+      }
+    }
+    syncTenantSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  const isSecuredTenant = userEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(userEmail);
 
   // --- TEMPORAL CHRON METRIC CALCULATORS ---
   const currentMonthName = new Date().toLocaleString("en-US", { month: "long", year: "numeric" });
@@ -98,7 +123,10 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
 
   // --- SECURE CLOUD NETWORK DATA INGESTION ---
   const fetchLiveAggregatedBudget = useCallback(async () => {
-    if (!userEmail) return;
+    if (!isSecuredTenant) {
+      setCategories([]);
+      return;
+    }
     setIsSyncing(true);
     try {
       const res = await fetch(`/api/budget?user_id=${encodeURIComponent(userEmail)}`);
@@ -111,18 +139,18 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
     } finally {
       setIsSyncing(false);
     }
-  }, [userEmail]);
+  }, [userEmail, isSecuredTenant]);
 
   useEffect(() => {
-    if (userEmail) {
+    if (isSecuredTenant) {
       fetchLiveAggregatedBudget();
     }
-  }, [userEmail, fetchLiveAggregatedBudget]);
+  }, [isSecuredTenant, fetchLiveAggregatedBudget]);
 
   // Add individual custom bucket framework parameters directly linked with the signature
   const handleCreateBudgetEnvelope = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCatName || !newCatLimit || !userEmail) return;
+    if (!newCatName || !newCatLimit || !isSecuredTenant) return;
 
     const kwArray = newCatKeywords.split(",").map(k => k.trim()).filter(k => k.length > 0);
     if (kwArray.length === 0) kwArray.push(newCatName.split(" ")[0].toLowerCase());
@@ -132,7 +160,7 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: userEmail, // Strict multi-tenant row boundary key injection
+          user_id: userEmail, // Strict multi-tenant row boundary token validation
           name: newCatName,
           budget_limit: parseFloat(newCatLimit) || 0,
           group_type: newCatType,
@@ -176,7 +204,7 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
   // Deployment framework mapping the collection of configured rules securely inside rows
   const handleGenerateFreshBudgetStructure = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (stagedCategories.length === 0 || !newBudgetTitle || !userEmail) return;
+    if (stagedCategories.length === 0 || !newBudgetTitle || !isSecuredTenant) return;
     setIsSyncing(true);
 
     try {
@@ -188,7 +216,7 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            user_id: userEmail, // Absolute row level verification key tracking enforcement
+            user_id: userEmail, // Validated secure row context string
             name: item.name,
             budget_limit: item.limit,
             group_type: item.type,
@@ -264,8 +292,9 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <button
             type="button"
+            disabled={!isSecuredTenant}
             onClick={() => setShowBudgetModal(true)}
-            className="flex-1 sm:flex-none bg-gradient-to-r from-purple-600 to-blue-600 text-white font-mono font-black text-xs h-10 px-4 rounded-xl shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            className="flex-1 sm:flex-none bg-gradient-to-r from-purple-600 to-blue-600 text-white font-mono font-black text-xs h-10 px-4 rounded-xl shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" /> Budget Framework Wizard
           </button>
@@ -273,8 +302,8 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
           <button
             type="button"
             onClick={fetchLiveAggregatedBudget}
-            disabled={isSyncing}
-            className="flex-1 sm:flex-none border border-gray-200 bg-white text-gray-700 font-mono font-black text-xs h-10 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-sm hover:border-gray-300 transition-all cursor-pointer disabled:opacity-50"
+            disabled={isSyncing || !isSecuredTenant}
+            className="flex-1 sm:flex-none border border-gray-200 bg-white text-gray-700 font-mono font-black text-xs h-10 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-sm hover:border-gray-300 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isSyncing ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" />
@@ -286,8 +315,9 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
 
           <button
             type="button"
+            disabled={!isSecuredTenant}
             onClick={() => setShowAddForm(!showAddForm)}
-            className="flex-1 sm:flex-none bg-gray-900 text-white font-mono font-black text-xs h-10 px-4 rounded-xl shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            className="flex-1 sm:flex-none bg-gray-900 text-white font-mono font-black text-xs h-10 px-4 rounded-xl shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {showAddForm ? <X className="w-3.5 h-3.5 text-rose-400" /> : <Plus className="w-3.5 h-3.5 text-blue-400" />}
             <span>{showAddForm ? "Dismiss Drawer" : "New Track Rule"}</span>
@@ -301,9 +331,10 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
           <button
             key={view}
             type="button"
+            disabled={!isSecuredTenant}
             onClick={() => setTimeframe(view)}
-            className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
-              timeframe === view 
+            className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              timeframe === view && isSecuredTenant
                 ? "bg-white text-purple-600 border border-gray-100 shadow-sm" 
                 : "text-gray-400 hover:text-gray-700"
             }`}
@@ -317,7 +348,7 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
           
-          {showAddForm && (
+          {showAddForm && isSecuredTenant && (
             <form onSubmit={handleCreateBudgetEnvelope} className="bg-gray-50 border border-gray-200 rounded-2xl p-5 space-y-4 text-left animate-slideDown shadow-inner">
               <span className="text-[10px] font-mono font-black uppercase text-purple-600 tracking-wider block">
                 Provision Dynamic Verification Pipeline Node
@@ -377,11 +408,20 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
                   <span>Actual Core</span>
                 </div>
               </div>
-              {basicItems.length === 0 ? (
+              
+              {userEmail === "authenticating..." ? (
+                <div className="p-8 text-center text-xs font-mono font-bold text-purple-600 uppercase tracking-wide flex items-center justify-center gap-1.5">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Verifying Clearance...
+                </div>
+              ) : userEmail === "unauthenticated_session" ? (
+                <div className="p-8 text-center text-xs font-mono font-bold text-rose-500 bg-rose-50/20 border border-dashed border-rose-100 rounded-xl m-2 flex items-center justify-center gap-2">
+                  <AlertCircle className="w-4 h-4" /> Security Clearance Context Not Sourced
+                </div>
+              ) : basicItems.length === 0 ? (
                 <div className="p-8 text-center text-xs font-mono font-bold text-gray-400 uppercase tracking-wide">No structural entries linked</div>
               ) : basicItems.map((item) => (
                 <div key={item.id} className="p-4 flex justify-between items-center text-xs font-black text-gray-900 hover:bg-gray-50/40 transition-colors group">
-                  <span className="underline decoration-gray-200 underline-offset-4 decoration-2 group-hover:text-purple-600 cursor-pointer transition-colors">
+                  <span className="underline decoration-gray-200 underline-offset-4 decoration-2 group-hover:text-purple-600 cursor-pointer transition-colors text-left">
                     {item.name}
                   </span>
                   <div className="flex gap-14 font-mono font-black tracking-tight text-right tabular-nums">
@@ -409,11 +449,20 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
                   <span>Active Ledger</span>
                 </div>
               </div>
-              {coreCategoryItems.length === 0 ? (
+              
+              {userEmail === "authenticating..." ? (
+                <div className="p-8 text-center text-xs font-mono font-bold text-purple-600 uppercase tracking-wide flex items-center justify-center gap-1.5">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Querying Target Matrix...
+                </div>
+              ) : userEmail === "unauthenticated_session" ? (
+                <div className="p-8 text-center text-xs font-mono font-bold text-rose-500 bg-rose-50/20 border border-dashed border-rose-100 rounded-xl m-2 flex items-center justify-center gap-2">
+                  <AlertCircle className="w-4 h-4" /> Core Partition Off-line
+                </div>
+              ) : coreCategoryItems.length === 0 ? (
                 <div className="p-8 text-center text-xs font-mono font-bold text-gray-400 uppercase tracking-wide">No fluid allocation targets monitored</div>
               ) : coreCategoryItems.map((item) => (
                 <div key={item.id} className="p-4 flex justify-between items-center text-xs font-black text-gray-900 hover:bg-gray-50/40 transition-colors group">
-                  <span className="underline decoration-gray-200 underline-offset-4 decoration-2 group-hover:text-blue-600 cursor-pointer transition-colors">
+                  <span className="underline decoration-gray-200 underline-offset-4 decoration-2 group-hover:text-blue-600 cursor-pointer transition-colors text-left">
                     {item.name}
                   </span>
                   <div className="flex gap-14 font-mono font-black tracking-tight text-right tabular-nums">
@@ -439,17 +488,17 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
             <div className="relative w-44 h-44 flex items-center justify-center">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 200 200">
                 <circle cx="100" cy="100" r={radius} className="text-gray-100" strokeWidth="12" stroke="currentColor" fill="transparent" />
-                <circle cx="100" cy="100" r={radius} className="text-purple-600 transition-all duration-700 ease-in-out" strokeWidth="12" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" stroke="currentColor" fill="transparent" />
+                <circle cx="100" cy="100" r={radius} className="text-purple-600 transition-all duration-700 ease-in-out" strokeWidth="12" strokeDasharray={circumference} strokeDashoffset={isSecuredTenant ? strokeDashoffset : circumference} strokeLinecap="round" stroke="currentColor" fill="transparent" />
               </svg>
               <div className="absolute text-center flex flex-col justify-center items-center">
                 <span className="text-[9px] font-mono font-black uppercase text-gray-400 tracking-widest flex items-center gap-0.5">
                   <PieChart className="w-3 h-3 text-purple-600" /> Liquid SAFE
                 </span>
                 <span className="text-2xl font-mono font-black text-gray-900 tracking-tight mt-1 tabular-nums">
-                  ${remainingSpendingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {!isSecuredTenant ? "$ --.--" : `$${remainingSpendingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 </span>
                 <span className="text-[8px] bg-purple-50 text-purple-600 font-bold border border-purple-100 px-2 py-0.5 rounded-md mt-1.5 font-mono tabular-nums">
-                  OF ${spendingBudgetLimit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  OF ${isSecuredTenant ? spendingBudgetLimit.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "--"}
                 </span>
               </div>
             </div>
@@ -458,7 +507,11 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
             <div className="w-full mt-6 p-[1px] bg-gradient-to-r from-purple-600 to-blue-500 rounded-xl shadow-xs">
               <div className="bg-white p-3.5 rounded-[11px] text-center">
                 <p className="text-[11px] text-gray-500 leading-relaxed font-medium">
-                  Operational target velocity ceiling: <span className="text-purple-600 font-black font-mono block text-sm mt-0.5">${burnRateContext.rate.toFixed(2)} / Unit Interval</span> {burnRateContext.label}
+                  {isSecuredTenant ? (
+                    <>Operational target velocity ceiling: <span className="text-purple-600 font-black font-mono block text-sm mt-0.5">${burnRateContext.rate.toFixed(2)} / Unit Interval</span> {burnRateContext.label}</>
+                  ) : (
+                    <span className="text-gray-400 font-mono text-[10px] uppercase block py-1">Awaiting Authorization Payload</span>
+                  )}
                 </p>
               </div>
             </div>
@@ -466,15 +519,15 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
             <div className="w-full mt-6 space-y-3 border-t border-gray-100 pt-5 text-xs font-black text-gray-500 font-mono uppercase tracking-wide">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400" /><span>Structural Limit</span></div>
-                <span className="text-gray-900 tabular-nums">${spendingBudgetLimit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span className="text-gray-900 tabular-nums">${isSecuredTenant ? spendingBudgetLimit.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "0.00"}</span>
               </div>
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-500" /><span>Active Execution</span></div>
-                <span className="text-gray-900 tabular-nums">${currentSpendingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span className="text-gray-900 tabular-nums">${isSecuredTenant ? currentSpendingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "0.00"}</span>
               </div>
               <div className="flex justify-between items-center border-t border-gray-100 pt-3 text-gray-900">
                 <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /><span>Available Delta</span></div>
-                <span className="text-emerald-600 text-sm font-black tabular-nums">${remainingSpendingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span className="text-emerald-600 text-sm font-black tabular-nums">${isSecuredTenant ? remainingSpendingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "0.00"}</span>
               </div>
             </div>
           </div>
@@ -482,7 +535,7 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
       </div>
 
       {/* 4. MODAL DRAWER OVERLAY DIALOG FOR THE DYNAMIC BUDGET BUILDER WIZARD */}
-      {showBudgetModal && (
+      {showBudgetModal && isSecuredTenant && (
         <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn text-left overflow-y-auto">
           <div className="bg-white rounded-[2rem] border border-gray-200 p-6 max-w-2xl w-full space-y-5 shadow-2xl my-8 max-h-[90vh] flex flex-col">
             
@@ -611,7 +664,7 @@ export default function MonthlyBudgetTab(): React.JSX.Element {
                   <div className="border border-gray-200 rounded-2xl overflow-hidden divide-y divide-gray-100 bg-white max-h-[160px] overflow-y-auto shadow-sm">
                     {stagedCategories.map((row, idx) => (
                       <div key={idx} className="p-3.5 flex justify-between items-center text-xs hover:bg-gray-50/50 transition-colors">
-                        <div className="min-w-0 flex-1 pr-4">
+                        <div className="min-w-0 flex-1 pr-4 text-left">
                           <div className="flex items-center gap-2">
                             <span className="font-black text-gray-900 truncate">{row.name}</span>
                             <span className={`text-[8px] font-mono font-black uppercase px-2 py-0.5 rounded-md border ${

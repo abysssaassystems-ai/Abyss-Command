@@ -22,7 +22,7 @@ interface TVShowsTabProps {
 export default function TVShowsTab({ shows }: TVShowsTabProps): React.JSX.Element {
   const [subTab, setSubTab] = useState<'watchlist' | 'upcoming'>('watchlist');
   const [localShows, setLocalShows] = useState<TVShowItem[]>(shows || []);
-  const [userEmail, setUserEmail] = useState<string>("");
+  const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
   const [isMutating, setIsMutating] = useState<string | null>(null);
 
   // Synchronize incoming cloud streams with local workspace views
@@ -30,15 +30,51 @@ export default function TVShowsTab({ shows }: TVShowsTabProps): React.JSX.Elemen
     if (shows) {
       setLocalShows(shows);
     }
-    const session = localStorage.getItem("active_software_user");
-    if (session) {
-      setUserEmail(JSON.parse(session).email);
-    }
   }, [shows]);
+
+  // --- MULTI-TENANT ARCHITECTURE SECURE HANDSHAKE ---
+  useEffect(() => {
+    function handleUserIdentity(user: any) {
+      if (user?.email) {
+        setTenantEmail(user.email);
+      } else if (user) {
+        setTenantEmail("anonymous_isolated");
+      } else {
+        setTenantEmail("unauthenticated_session");
+      }
+    }
+
+    // 1. Core token authentication clearance pass
+    async function syncTenantSession() {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          handleUserIdentity(user);
+        } else {
+          handleUserIdentity(null);
+        }
+      } catch (err) {
+        console.error("TV_AUTH_HANDSHAKE_EXCEPTION:", err);
+        setTenantEmail("fault_containment_mode");
+      }
+    }
+    syncTenantSession();
+
+    // 2. Real-time auth subscriber channel observer line
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const isSecuredTenant = tenantEmail && !["authenticating...", "unauthenticated_session", "fault_containment_mode"].includes(tenantEmail);
 
   // SECURE CLOUD MUTATION: Updates ledger progress indicators mapped to user signatures
   const handleMarkEpisodeWatched = async (showId: string) => {
-    if (!userEmail) return;
+    if (!isSecuredTenant) return;
     setIsMutating(showId);
 
     // Optimistically toggle completion states inside the viewport
@@ -49,7 +85,7 @@ export default function TVShowsTab({ shows }: TVShowsTabProps): React.JSX.Elemen
         .from('tracked_shows')
         .update({ status: 'completed' })
         .eq('id', showId)
-        .eq('client_email', userEmail); // Strict multi-tenant row verification boundary
+        .eq('client_email', tenantEmail); // Strict multi-tenant row verification boundary
 
       if (error) throw error;
     } catch (err) {
@@ -104,8 +140,9 @@ export default function TVShowsTab({ shows }: TVShowsTabProps): React.JSX.Elemen
       <div className="flex bg-gray-50 border border-gray-200 p-1 rounded-xl">
         <button
           type="button"
+          disabled={tenantEmail === "authenticating..."}
           onClick={() => setSubTab('watchlist')}
-          className={`flex-1 py-2.5 text-center text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
+          className={`flex-1 py-2.5 text-center text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
             subTab === 'watchlist'
               ? 'bg-white text-purple-600 border border-gray-100 shadow-sm font-black'
               : 'text-gray-400 hover:text-gray-700'
@@ -115,8 +152,9 @@ export default function TVShowsTab({ shows }: TVShowsTabProps): React.JSX.Elemen
         </button>
         <button
           type="button"
+          disabled={tenantEmail === "authenticating..."}
           onClick={() => setSubTab('upcoming')}
-          className={`flex-1 py-2.5 text-center text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
+          className={`flex-1 py-2.5 text-center text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
             subTab === 'upcoming'
               ? 'bg-white text-purple-600 border border-gray-100 shadow-sm font-black'
               : 'text-gray-400 hover:text-gray-700'
@@ -132,7 +170,12 @@ export default function TVShowsTab({ shows }: TVShowsTabProps): React.JSX.Elemen
           <Tv className="w-4 h-4 text-blue-500" />
         </div>
 
-        {activeShows.length === 0 ? (
+        {tenantEmail === "authenticating..." ? (
+          <div className="w-full h-48 flex flex-col items-center justify-center gap-2 text-gray-400 font-mono text-xs">
+            <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
+            <span>Verifying Application Signature Arrays...</span>
+          </div>
+        ) : activeShows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 border border-dashed border-gray-200 bg-gray-50/50 rounded-2xl">
             <Calendar className="w-8 h-8 text-gray-300 mb-2" />
             <p className="text-sm font-bold text-gray-500 uppercase tracking-wide">Index parameters clear</p>
@@ -158,29 +201,29 @@ export default function TVShowsTab({ shows }: TVShowsTabProps): React.JSX.Elemen
                   </div>
 
                   {/* Metadata Descriptive Text Cluster */}
-                  <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex-1 min-w-0 space-y-1.5 text-left">
                     <h4 className="font-black text-sm text-gray-900 truncate group-hover:text-blue-600 transition-colors">
                       {show.title}
                     </h4>
                     
                     <div className="flex items-center gap-2 text-xs text-gray-500 font-mono font-bold">
-                      <span className="text-purple-600 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded-md text-[10px]">
-                        {show.episode_code || show.episode_code || 'S01 | E01'}
+                      <span className="text-purple-600 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded-md text-[10px] flex-shrink-0">
+                        {show.episode_code || 'S01 | E01'}
                       </span>
-                      <span className="text-gray-300">•</span>
+                      <span className="text-gray-300 flex-shrink-0">•</span>
                       <span className="text-gray-600 font-sans font-medium truncate">
-                        {show.episode_title || show.episode_title || 'Logged Entry Core Matrix'}
+                        {show.episode_title || 'Logged Entry Core Matrix'}
                       </span>
                     </div>
 
                     {/* Condition Status Badge Row */}
                     <div className="flex items-center gap-1.5 pt-0.5">
-                      {(show.is_premiere || show.is_premiere) && (
+                      {show.is_premiere && (
                         <span className="text-[9px] font-black uppercase bg-gray-900 text-white px-2 py-0.5 rounded-md tracking-wider">
                           Premiere
                         </span>
                       )}
-                      {(show.is_new || show.is_new) && (
+                      {show.is_new && (
                         <span className="text-[9px] font-black uppercase bg-blue-100 border border-blue-200 text-blue-700 px-2 py-0.5 rounded-md tracking-wider">
                           New Episode
                         </span>
@@ -192,9 +235,10 @@ export default function TVShowsTab({ shows }: TVShowsTabProps): React.JSX.Elemen
                   {subTab === 'watchlist' ? (
                     <button 
                       type="button"
-                      disabled={isMutating === show.id}
+                      disabled={isMutating === show.id || tenantEmail === "unauthenticated_session"}
                       onClick={() => handleMarkEpisodeWatched(show.id)}
-                      className="p-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 transition-all flex-shrink-0 shadow-sm focus:outline-none cursor-pointer"
+                      className="p-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 transition-all flex-shrink-0 shadow-sm focus:outline-none cursor-pointer disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-400 disabled:hover:border-gray-200"
+                      title={tenantEmail === "unauthenticated_session" ? "Login required to shift tracking bounds" : "Mark checkpoint completed"}
                     >
                       {isMutating === show.id ? (
                         <Loader2 className="w-5 h-5 animate-spin text-blue-600" />

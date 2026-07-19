@@ -1,11 +1,12 @@
 "use client";
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-interface UserSession {
+interface UserProfile {
+  id: string;
   email: string;
   account_name: string;
-  access_level: string;
 }
 
 interface ProgressMetrics {
@@ -20,65 +21,99 @@ interface ProgressMetrics {
 }
 
 export default function ProjectProgressTab(): React.JSX.Element {
-  const [user, setUser] = useState<UserSession | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [metrics, setMetrics] = useState<ProgressMetrics | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // 1. SESSION INGESTION & WEBSOCKET UPLINK
+  // 1. SESSION INGESTION & WEBSOCKET TELEMETRY STREAM
   useEffect(() => {
-    const session = localStorage.getItem("active_user");
-    if (!session) {
-      setIsLoading(false);
-      return;
-    }
-    
-    const parsedUser: UserSession = JSON.parse(session);
-    setUser(parsedUser);
+    let realtimeChannel: any = null;
 
-    async function initializeTelemetryStream() {
-      const { data, error } = await supabase
-        .from('client_project_progress')
-        .select('*')
-        .eq('client_email', parsedUser.email)
-        .maybeSingle();
+    async function establishSecureTelemetryStream() {
+      try {
+        setIsLoading(true);
+        setErrorMsg(null);
 
-      if (!error && data) {
-        setMetrics(data);
-      }
-      setIsLoading(false);
+        // A. IDENTITY VERIFICATION: Pull real identity directly from crypto layer
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
-      const isolatedChannelName = `live-client-progress-${parsedUser.email}-${Math.random().toString(36).substring(7)}`;
+        if (authError || !authUser) {
+          setErrorMsg("SESSION_UNVERIFIED: Active authentication token missing.");
+          return;
+        }
 
-      const realtimeChannel = supabase
-        .channel(isolatedChannelName)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'client_project_progress',
-            filter: `client_email=eq.${parsedUser.email}`
-          },
-          (payload) => {
-            if (payload.new) {
-              setMetrics(payload.new as ProgressMetrics);
+        // Fetch user workspace context variables securely
+        const { data: profileData } = await supabase
+          .from('web_login_users')
+          .select('id, email, account_name')
+          .eq('id', authUser.id)
+          .maybeSingle();
+
+        const activeUserContext: UserProfile = {
+          id: authUser.id,
+          email: authUser.email || "",
+          account_name: profileData?.account_name || "Nexus Partner"
+        };
+        
+        setUser(activeUserContext);
+
+        // B. DATA COMPILATION: Retrieve specific project metrics using dual identifier validation
+        const { data: progressData, error: dbError } = await supabase
+          .from('client_project_progress')
+          .select('*')
+          .or(`user_id.eq.${activeUserContext.id},client_email.eq.${activeUserContext.email}`)
+          .maybeSingle();
+
+        if (dbError) {
+          throw new Error(`METRIC_FETCH_FAULT: ${dbError.message}`);
+        }
+
+        if (progressData) {
+          setMetrics(progressData);
+        }
+
+        setIsLoading(false);
+
+        // C. REACTIONARY STREAM: Mount secure pipeline tracking Postgres write heads in real-time
+        const isolatedChannelName = `live-progress-${activeUserContext.id}-${Math.random().toString(36).substring(7)}`;
+        
+        // Define dynamic subscription filter string dependent on structural columns
+        const channelFilter = activeUserContext.email 
+          ? `client_email=eq.${activeUserContext.email}` 
+          : `user_id=eq.${activeUserContext.id}`;
+
+        realtimeChannel = supabase
+          .channel(isolatedChannelName)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'client_project_progress',
+              filter: channelFilter
+            },
+            (payload) => {
+              if (payload.new) {
+                setMetrics(payload.new as ProgressMetrics);
+              }
             }
-          }
-        )
-        .subscribe();
+          )
+          .subscribe();
 
-      return () => {
-        supabase.removeChannel(realtimeChannel);
-      };
+      } catch (err: any) {
+        setErrorMsg(err.message || "UNCAUGHT_TELEMETRY_STREAM_FAULT");
+        setIsLoading(false);
+      }
     }
 
-    let cleanupFn: (() => void) | undefined;
-    initializeTelemetryStream().then(cleanup => {
-      if (typeof cleanup === 'function') cleanupFn = cleanup;
-    });
+    establishSecureTelemetryStream();
 
+    // Clean up pipeline instances safely on unmount to prevent open websocket hanging loops
     return () => {
-      if (cleanupFn) cleanupFn();
+      if (realtimeChannel) {
+        supabase.removeChannel(realtimeChannel);
+      }
     };
   }, []);
 
@@ -94,7 +129,7 @@ export default function ProjectProgressTab(): React.JSX.Element {
       api_integrations: 3,
       hardware_integrations: 4,
       final_testing: 3,
-      web_storage_setup: 2 // "All other options" fallback tier
+      web_storage_setup: 2 
     };
 
     // Calculate fractional remaining days for each individual module architecture
@@ -148,7 +183,7 @@ export default function ProjectProgressTab(): React.JSX.Element {
         <div>
           <span className="text-[10px] font-mono font-bold tracking-widest text-[#00F2FE] uppercase block">// ENGINE TELEMETRY CHANNEL</span>
           <h2 className="text-xl font-black text-white uppercase italic mt-1">
-            System Workspace Progress // <span className="text-[#00F2FE] text-glow">{user?.account_name || "Nexus Partner"}</span>
+            System Workspace Progress // <span className="text-[#00F2FE] text-glow">{user?.account_name}</span>
           </h2>
           <p className="text-xs text-gray-400 mt-1 font-sans">
             Review live framework building cycles, environment node data, and estimated terminal release windows below.
@@ -158,6 +193,12 @@ export default function ProjectProgressTab(): React.JSX.Element {
           Uplink: Live / Secure
         </span>
       </header>
+
+      {errorMsg && (
+        <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl font-mono text-[11px] text-rose-400">
+          ⚠ TELEMETRY_STREAM_EXCEPTION: {errorMsg}
+        </div>
+      )}
 
       {/* Primary Analytics Section: Radial Ring Graph & Linear Metric Blocks */}
       <div className="grid md:grid-cols-12 gap-6 items-stretch">

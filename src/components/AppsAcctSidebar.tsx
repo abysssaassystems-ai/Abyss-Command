@@ -21,11 +21,9 @@ export default function AppsAcctSidebar(): React.JSX.Element {
   const [tenantEmail, setTenantEmail] = useState<string>("authenticating...");
 
   useEffect(() => {
-    async function loadSidebarIdentity() {
-      // Pull directly from the secure local auth token metadata
-      const { data: { user }, error } = await supabase.auth.getUser();
-      
-      if (error || !user) {
+    // Helper to process user metadata safely
+    function handleUserIdentity(user: any) {
+      if (!user) {
         setTenantEmail("unauthenticated_session");
         setAccountName("Client Engine");
         return;
@@ -33,7 +31,6 @@ export default function AppsAcctSidebar(): React.JSX.Element {
 
       setTenantEmail(user.email || "isolated_anonymous");
       
-      // Read directly from user_metadata to completely bypass database RLS blocks
       if (user.user_metadata?.account_name) {
         setAccountName(user.user_metadata.account_name);
       } else if (user.user_metadata?.display_name) {
@@ -43,7 +40,26 @@ export default function AppsAcctSidebar(): React.JSX.Element {
       }
     }
 
-    loadSidebarIdentity();
+    // 1. Initial secure token signature resolution
+    async function loadInitialIdentity() {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (!error && user) {
+        handleUserIdentity(user);
+      } else {
+        handleUserIdentity(null);
+      }
+    }
+    loadInitialIdentity();
+
+    // 2. Real-time auth channel listener to stream dynamic token swaps instantly
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserIdentity(session?.user || null);
+    });
+
+    // Tear down network subscription channels cleanly on unmount
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const menuRoutes = [
@@ -58,6 +74,7 @@ export default function AppsAcctSidebar(): React.JSX.Element {
     <aside className="w-64 h-screen bg-white border-r border-zinc-200 flex flex-col justify-between p-5 select-none sticky top-0 z-50 text-left">
       <div className="space-y-6">
         
+        {/* LOGO HEADER STRIP */}
         <div className="border-b border-zinc-100 pb-5">
           <Link href="/dashboard" className="flex items-center gap-3 group focus:outline-none">
             <div className="p-2 bg-zinc-950 rounded-xl text-white transition-colors group-hover:bg-zinc-800">
@@ -74,6 +91,7 @@ export default function AppsAcctSidebar(): React.JSX.Element {
           </Link>
         </div>
 
+        {/* SECURITY ENCLAVE METADATA STATUS */}
         <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3 flex items-center gap-2.5">
           <Fingerprint className="w-4 h-4 text-zinc-500 shrink-0 stroke-[2.5]" />
           <div className="min-w-0">
@@ -86,6 +104,7 @@ export default function AppsAcctSidebar(): React.JSX.Element {
           </div>
         </div>
 
+        {/* NAVIGATION LINKS CONTAINER */}
         <nav className="flex flex-col space-y-1">
           <span className="text-[10px] font-mono font-black uppercase text-zinc-400 tracking-widest mb-2 px-1 block">
             Navigation Panel
@@ -115,6 +134,7 @@ export default function AppsAcctSidebar(): React.JSX.Element {
         </nav>
       </div>
 
+      {/* CORE SECURE RUNTIME FOOTER */}
       <div className="border-t border-zinc-100 pt-4 space-y-3">
         <div className="flex items-center gap-2 px-1 text-zinc-500">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
@@ -125,7 +145,7 @@ export default function AppsAcctSidebar(): React.JSX.Element {
         
         <div className="text-[9px] font-mono text-zinc-400 flex justify-between items-center px-1">
           <span>FRAMEWORK v4.26</span>
-          <span className="tracking-widest font-bold">SECURE</span>
+          <span className="tracking-widest font-bold text-emerald-600">SECURE</span>
         </div>
       </div>
 
